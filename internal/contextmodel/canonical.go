@@ -167,6 +167,9 @@ func (item CanonicalContextItem) Validate() error {
 		!canonicalText(item.Source.ExternalID, 512) || (item.Source.Connector != "" && !canonicalText(item.Source.Connector, 128)) {
 		return fmt.Errorf("canonical ContextItem source identity is invalid")
 	}
+	if err := validateExternalIdentity(item.Source.ExternalID); err != nil {
+		return err
+	}
 	if !validContent(item.Content) {
 		return fmt.Errorf("canonical ContextItem content is invalid")
 	}
@@ -542,8 +545,27 @@ func validatePortableURI(value string) error {
 		return fmt.Errorf("portable URI is invalid")
 	}
 	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme == "" || (parsed.Scheme != "https" && parsed.Scheme != "http" && parsed.Scheme != "urn" && parsed.Scheme != "litecontext") {
-		return fmt.Errorf("portable URI must use http, https, urn, or litecontext")
+	if err != nil || parsed.User != nil || parsed.Scheme == "" || (parsed.Scheme != "https" && parsed.Scheme != "http" && parsed.Scheme != "urn" && parsed.Scheme != "litecontext") {
+		return fmt.Errorf("portable URI must use http, https, urn, or litecontext without credentials")
+	}
+	return nil
+}
+
+func drivePath(value string) bool {
+	return len(value) >= 2 && value[1] == ':' && ((value[0] >= 'A' && value[0] <= 'Z') || (value[0] >= 'a' && value[0] <= 'z'))
+}
+func validateExternalIdentity(value string) error {
+	if strings.HasPrefix(value, "/") || strings.Contains(value, "\\") || drivePath(value) || strings.HasPrefix(value, "~/") || strings.HasPrefix(strings.ToLower(value), "file:") {
+		return fmt.Errorf("external identity must not contain a device path")
+	}
+	if parsed, err := url.Parse(value); (err == nil && parsed.User != nil) || (strings.Contains(value, "://") && err != nil) {
+		return fmt.Errorf("external identity must not contain URL credentials")
+	}
+
+	for _, part := range strings.Split(value, "/") {
+		if part == ".." {
+			return fmt.Errorf("external identity must not contain parent traversal")
+		}
 	}
 	return nil
 }
@@ -552,7 +574,7 @@ func validateRelativeLocator(value string) error {
 	if value == "" {
 		return nil
 	}
-	if len(value) > 8192 || !norm.NFC.IsNormalString(value) || strings.HasPrefix(value, "/") || strings.Contains(value, "\\") || path.Clean(value) != value || strings.HasPrefix(value, "../") || value == ".." {
+	if len(value) > 8192 || !norm.NFC.IsNormalString(value) || strings.HasPrefix(value, "/") || drivePath(value) || strings.HasPrefix(value, "~/") || strings.HasPrefix(strings.ToLower(value), "file:") || strings.Contains(value, "\\") || path.Clean(value) != value || strings.HasPrefix(value, "../") || value == ".." {
 		return fmt.Errorf("portable locator must be an NFC relative slash path")
 	}
 	for _, character := range value {

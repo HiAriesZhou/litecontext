@@ -46,6 +46,9 @@ func (b *Bundle) CollectMarkdown(ctx context.Context, root, name string, now tim
 	if err := validateSourceName(name); err != nil {
 		return CollectResult{}, err
 	}
+	if err := CheckSourcePath(b.dir, root); err != nil {
+		return CollectResult{}, fmt.Errorf("source folder %s: %w", root, err)
+	}
 	absolute, err := filepath.Abs(root)
 	if err != nil {
 		return CollectResult{}, fmt.Errorf("resolve source folder: %w", err)
@@ -76,6 +79,9 @@ func (b *Bundle) CollectMarkdown(ctx context.Context, root, name string, now tim
 		if err != nil {
 			return fmt.Errorf("scan source folder: %w", err)
 		}
+		if len(scan.Skipped) > 0 {
+			return fmt.Errorf("incomplete Markdown scan: %d skipped files; previous snapshot retained", len(scan.Skipped))
+		}
 		result = CollectResult{SourceID: record.ID, Name: record.Name}
 		for _, skipped := range scan.Skipped {
 			result.Warnings = append(result.Warnings, Warning{Path: norm.NFC.String(skipped.Path), Reason: skipped.Reason})
@@ -85,11 +91,10 @@ func (b *Bundle) CollectMarkdown(ctx context.Context, root, name string, now tim
 			item, warnings := canonicalMarkdownItem(record.ID, scanned, observedAt)
 			result.Warnings = append(result.Warnings, warnings...)
 			if item == nil {
-				continue
+				return fmt.Errorf("Markdown item failed validation; previous snapshot retained")
 			}
 			if _, duplicate := items[item.ID]; duplicate {
-				result.Warnings = append(result.Warnings, Warning{Path: item.Source.ExternalID, Reason: "duplicate_path"})
-				continue
+				return fmt.Errorf("duplicate normalized Markdown path; previous snapshot retained")
 			}
 			items[item.ID] = *item
 		}

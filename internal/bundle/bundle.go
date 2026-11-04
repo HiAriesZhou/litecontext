@@ -23,6 +23,7 @@ import (
 const maximumSnapshotBytes = 64 << 20
 const maximumGeneration = 1<<53 - 1
 
+var scratchPattern = regexp.MustCompile(`^\.tmp-[0-9a-f]{32}$`)
 var hashPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 var sourcePattern = regexp.MustCompile(`^src_[0-9a-f]{32}$`)
 var itemPattern = regexp.MustCompile(`^itm_[0-9a-f]{64}$`)
@@ -407,7 +408,7 @@ func cleanSnapshots(r *os.Root, live string) error {
 		return err
 	}
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".tmp-") {
+		if scratchPattern.MatchString(e.Name()) {
 			if !e.Type().IsRegular() {
 				return fmt.Errorf("unexpected scratch entry")
 			}
@@ -425,4 +426,33 @@ func (b *Bundle) Validate(ctx context.Context) (uint64, error) {
 	var generation uint64
 	err := b.access(ctx, false, func(s *snapshot) error { generation = s.Generation; return nil })
 	return generation, err
+}
+
+// CheckSourcePath keeps input files outside the bundle's managed storage.
+// A bundle may live beneath a selected source, but cannot itself be a source.
+func CheckSourcePath(bundleDir, input string) error {
+	target, err := filepath.EvalSymlinks(input)
+	if err != nil {
+		return err
+	}
+	target, err = filepath.Abs(target)
+	if err != nil {
+		return err
+	}
+	root, err := filepath.EvalSymlinks(bundleDir)
+	if err != nil {
+		return err
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	relative, err := filepath.Rel(root, target)
+	if err != nil {
+		return err
+	}
+	if relative == "." || (!strings.HasPrefix(relative, ".."+string(filepath.Separator)) && relative != "..") {
+		return fmt.Errorf("source must be outside bundle storage")
+	}
+	return nil
 }

@@ -62,8 +62,8 @@ func runBundle(arguments []string) error {
 }
 
 func runCollect(arguments []string) error {
-	const usage = "usage: lc collect markdown PATH --bundle DIR --name NAME [--json]"
-	if len(arguments) == 0 || arguments[0] != "markdown" {
+	const usage = "usage: lc collect markdown|git PATH --bundle DIR --name NAME [--json]"
+	if len(arguments) == 0 || (arguments[0] != "markdown" && arguments[0] != "git") {
 		return fmt.Errorf(usage)
 	}
 	flags := flag.NewFlagSet("collect markdown", flag.ContinueOnError)
@@ -77,11 +77,19 @@ func runCollect(arguments []string) error {
 	if flags.NArg() != 1 || *bundleDir == "" || *name == "" {
 		return fmt.Errorf(usage)
 	}
+	if err := bundle.CheckSourcePath(*bundleDir, flags.Arg(0)); err != nil {
+		return err
+	}
 	b, err := bundle.Open(*bundleDir)
 	if err != nil {
 		return err
 	}
-	result, err := b.CollectMarkdown(context.Background(), flags.Arg(0), *name, time.Now())
+	var result bundle.CollectResult
+	if arguments[0] == "git" {
+		result, err = b.CollectGit(context.Background(), flags.Arg(0), *name, time.Now())
+	} else {
+		result, err = b.CollectMarkdown(context.Background(), flags.Arg(0), *name, time.Now())
+	}
 	if err != nil {
 		return err
 	}

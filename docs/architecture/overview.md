@@ -22,9 +22,17 @@ These guarantees cover cooperating LiteContext processes and process interruptio
 
 ## Collection
 
-The CLI delegates collection to `internal/bundle`, which uses `internal/ingest` for Markdown scanning and `internal/contextmodel` for normalization, validation and hashes. Source files remain in place and are never modified. Reusing a source name refreshes the same source ID. Local absolute paths do not enter portable records.
+The CLI delegates collection to `internal/bundle`, which uses `internal/ingest` for Markdown scanning and `internal/contextmodel` for normalization, validation and hashes. Source files remain in place and are never modified. Reusing a source name refreshes the same source ID. Local absolute paths do not enter portable locators or external identities, including Windows drive paths and file URIs. Input files cannot be selected from inside bundle storage.
 
-A successful scan updates current records and retains replaced or removed versions. A source that cannot be scanned does not become an empty successful snapshot. Scan limits and warnings are explicit; absent visibility is private. Visibility is not authorization to send content to a model provider.
+A successful scan updates current records and retains replaced or removed versions. An unreadable source, skipped file, invalid item or duplicate normalized path aborts Markdown collection and retains the complete previous snapshot. A successful scan of an actually empty folder may remove current items. Scan limits and warnings are explicit; absent visibility is private. Visibility is not authorization to send content to a model provider.
+
+## Git and producer ingestion
+
+Git collection requires the explicitly selected repository root and resolves HEAD to a commit before reading its reachable history. It accepts at most 500 commits, 32 MiB of commit text and a 30-second operation window. Shallow repositories and exceeded limits fail without updating the bundle. It collects full commit IDs, normalized commit messages and author dates, not working-file contents, diffs, author contact details or remote configuration. Citations use `commit/<full-id>`; a rewritten branch changes current membership while retaining exact old versions.
+
+Git commands use fixed arguments and bounded output. Ambient Git repository/config variables are removed; global config, hooks, signature verification, notes, fsmonitor, lazy fetching and interactive authentication are disabled for collection. The selected local repository is never written. No Git command is run from source text.
+
+`source add` explicitly creates a `producer` source. Import then requires that source ID independently from the batch body. ContextItemBatch v1 supports complete snapshots and incremental updates/deletions. All items must belong to the selected active producer, have valid hashes, relative locators, matching source types and zero bundle revisions. Duplicate keys, unknown fields, invalid records and cross-source items reject the whole batch. Limits are 500 combined mutations and 32 MiB; an explicitly empty snapshot clears current membership, while an empty incremental batch is rejected. Repeated identical imports do not create a generation. Producer declarations do not prove that a check ran or a human confirmed a statement.
 
 ## Reading and lifecycle
 
