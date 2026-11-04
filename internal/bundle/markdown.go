@@ -2,7 +2,7 @@ package bundle
 
 import (
 	"context"
-	"encoding/json"
+
 	"errors"
 	"fmt"
 	"os"
@@ -38,11 +38,6 @@ type Warning struct {
 	Reason string `json:"reason"`
 }
 
-// failAt lets tests interrupt a collection at a named stage.
-var failAt string
-
-var errInjected = errors.New("injected collection failure")
-
 // CollectMarkdown snapshots the Markdown folder root into the source named
 // name, creating the source on first use. Items whose portable record is
 // unchanged keep their existing bytes, so re-collecting unchanged notes
@@ -67,39 +62,43 @@ func (b *Bundle) CollectMarkdown(ctx context.Context, root, name string, now tim
 		return CollectResult{}, fmt.Errorf("source folder %s is not a directory", root)
 	}
 	observedAt := now.UTC().Format(time.RFC3339Nano)
-	record, isNew, err := b.sourceByName(name, markdownSourceType, observedAt)
-	if err != nil {
-		return CollectResult{}, err
-	}
+	var result CollectResult
+	err = b.access(ctx, true, func(state *snapshot) error {
+		record, isNew, err := state.sourceByName(name, markdownSourceType, observedAt)
+		if err != nil {
+			return err
+		}
 
-	scan, err := ingest.ScanLocalMarkdownContext(ctx, absolute, contextmodel.SourceRecord{
-		SchemaVersion: contextmodel.SchemaVersion, ID: record.ID, Type: markdownSourceType, Name: record.Name,
-		Status: "active", CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
-	}, now)
-	if err != nil {
-		return CollectResult{}, fmt.Errorf("scan source folder: %w", err)
-	}
-	result := CollectResult{SourceID: record.ID, Name: record.Name}
-	for _, skipped := range scan.Skipped {
-		result.Warnings = append(result.Warnings, Warning{Path: norm.NFC.String(skipped.Path), Reason: skipped.Reason})
-	}
-	items := make(map[string]contextmodel.CanonicalContextItem, len(scan.Items))
-	for _, scanned := range scan.Items {
-		item, warnings := canonicalMarkdownItem(record.ID, scanned, observedAt)
-		result.Warnings = append(result.Warnings, warnings...)
-		if item == nil {
-			continue
+		scan, err := ingest.ScanLocalMarkdownContext(ctx, absolute, contextmodel.SourceRecord{
+			SchemaVersion: contextmodel.SchemaVersion, ID: record.ID, Type: markdownSourceType, Name: record.Name,
+			Status: "active", CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
+		}, now)
+		if err != nil {
+			return fmt.Errorf("scan source folder: %w", err)
 		}
-		if _, duplicate := items[item.ID]; duplicate {
-			result.Warnings = append(result.Warnings, Warning{Path: item.Source.ExternalID, Reason: "duplicate_path"})
-			continue
+		result = CollectResult{SourceID: record.ID, Name: record.Name}
+		for _, skipped := range scan.Skipped {
+			result.Warnings = append(result.Warnings, Warning{Path: norm.NFC.String(skipped.Path), Reason: skipped.Reason})
 		}
-		items[item.ID] = *item
-	}
-	if err := b.writeSnapshot(record, isNew, items, observedAt, &result); err != nil {
-		return CollectResult{}, err
-	}
-	return result, nil
+		items := make(map[string]contextmodel.CanonicalContextItem, len(scan.Items))
+		for _, scanned := range scan.Items {
+			item, warnings := canonicalMarkdownItem(record.ID, scanned, observedAt)
+			result.Warnings = append(result.Warnings, warnings...)
+			if item == nil {
+				continue
+			}
+			if _, duplicate := items[item.ID]; duplicate {
+				result.Warnings = append(result.Warnings, Warning{Path: item.Source.ExternalID, Reason: "duplicate_path"})
+				continue
+			}
+			items[item.ID] = *item
+		}
+		if err := state.writeSnapshot(record, isNew, items, observedAt, &result); err != nil {
+			return err
+		}
+		return nil
+	})
+	return result, err
 }
 
 func validateSourceName(name string) error {
@@ -117,21 +116,21 @@ func validateSourceName(name string) error {
 // sourceByName returns the source with this name, or a new unsaved record.
 // Names are the portable identity a user refers to; local folder paths are
 // never stored in the bundle.
-func (b *Bundle) sourceByName(name, sourceType, now string) (contextmodel.CanonicalSourceRecord, bool, error) {
-	records, err := b.loadSources()
-	if err != nil {
-		return contextmodel.CanonicalSourceRecord{}, false, err
-	}
-	for _, record := range records {
+func (s *snapshot) sourceByName(name, sourceType, now string) (contextmodel.CanonicalSourceRecord, bool, error) {
+	for _, entry := range s.Sources {
+		record := entry.Record
 		if record.Name != name {
 			continue
+		}
+		if !entry.Active {
+			return contextmodel.CanonicalSourceRecord{}, false, fmt.Errorf("source is inactive")
 		}
 		if record.Type != sourceType {
 			return contextmodel.CanonicalSourceRecord{}, false, fmt.Errorf("source %q is a %s source, not %s", name, record.Type, sourceType)
 		}
 		return record, false, nil
 	}
-	id, err := newSourceID()
+	id, err := randomID("src_")
 	if err != nil {
 		return contextmodel.CanonicalSourceRecord{}, false, err
 	}
@@ -201,108 +200,43 @@ func normalizedTags(value any) []string {
 	return result
 }
 
-// writeSnapshot replaces the source's item directory with exactly items. The
-// new directory is fully staged before the swap, and Open restores the old one
-// if the swap is interrupted.
-func (b *Bundle) writeSnapshot(record contextmodel.CanonicalSourceRecord, isNew bool, items map[string]contextmodel.CanonicalContextItem, observedAt string, result *CollectResult) error {
-	itemsRoot := filepath.Join(b.dir, itemsDir)
-	current := filepath.Join(itemsRoot, record.ID)
-	existing, err := readExistingItems(current)
-	if err != nil {
-		return err
-	}
-	staging := filepath.Join(itemsRoot, "."+record.ID+stagingSuffix)
-	if err := os.RemoveAll(staging); err != nil {
-		return fmt.Errorf("clear staging: %w", err)
-	}
-	if err := os.Mkdir(staging, directoryMode); err != nil {
-		return fmt.Errorf("create staging: %w", err)
-	}
-	defer os.RemoveAll(staging)
-
+func (s *snapshot) writeSnapshot(record contextmodel.CanonicalSourceRecord, isNew bool, items map[string]contextmodel.CanonicalContextItem, observedAt string, result *CollectResult) error {
 	for id, item := range items {
-		contents, err := encodeCanonical(item)
-		if err != nil {
-			return err
+		entry, exists := s.Items[id]
+		hash := item.Provenance.RecordHash
+		if exists && entry.SourceID != record.ID {
+			return fmt.Errorf("item source mismatch")
 		}
-		if previous, found := existing[id]; found {
-			if previous.recordHash == item.Provenance.RecordHash {
-				contents = previous.contents
-				result.Unchanged++
+		if !exists {
+			entry = itemState{SourceID: record.ID, Versions: map[string]contextmodel.CanonicalContextItem{}}
+		}
+		if entry.Current == hash {
+			result.Unchanged++
+		} else {
+			if entry.Current == "" {
+				result.Added++
 			} else {
 				result.Updated++
 			}
-		} else {
-			result.Added++
+			entry.Current = hash
 		}
-		if err := os.WriteFile(filepath.Join(staging, id+".json"), contents, fileMode); err != nil {
-			return fmt.Errorf("stage item: %w", err)
+		if _, ok := entry.Versions[hash]; !ok {
+			entry.Versions[hash] = item
 		}
+		s.Items[id] = entry
 	}
-	for id := range existing {
-		if _, kept := items[id]; !kept {
-			result.Removed++
-		}
-	}
-	if !isNew && result.Added+result.Updated+result.Removed == 0 {
-		return nil
-	}
-
-	record.UpdatedAt = observedAt
-	if err := b.saveSource(record); err != nil {
-		return err
-	}
-	if failAt == "before-swap" {
-		return errInjected
-	}
-	backup := filepath.Join(itemsRoot, "."+record.ID+backupSuffix)
-	if _, err := os.Stat(current); err == nil {
-		if err := os.Rename(current, backup); err != nil {
-			return fmt.Errorf("move previous snapshot aside: %w", err)
-		}
-		if failAt == "after-backup" {
-			return errInjected
+	for id, entry := range s.Items {
+		if entry.SourceID == record.ID && entry.Current != "" {
+			if _, ok := items[id]; !ok {
+				entry.Current = ""
+				s.Items[id] = entry
+				result.Removed++
+			}
 		}
 	}
-	if err := os.Rename(staging, current); err != nil {
-		return fmt.Errorf("install new snapshot: %w", err)
-	}
-	if err := os.RemoveAll(backup); err != nil {
-		return fmt.Errorf("remove previous snapshot: %w", err)
+	if isNew || result.Added+result.Updated+result.Removed > 0 {
+		record.UpdatedAt = observedAt
+		s.Sources[record.ID] = sourceState{Record: record, Active: true}
 	}
 	return nil
-}
-
-type existingItem struct {
-	contents   []byte
-	recordHash string
-}
-
-func readExistingItems(dir string) (map[string]existingItem, error) {
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return map[string]existingItem{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read existing items: %w", err)
-	}
-	result := make(map[string]existingItem, len(entries))
-	for _, entry := range entries {
-		id, ok := strings.CutSuffix(entry.Name(), ".json")
-		if !ok || entry.IsDir() {
-			continue
-		}
-		contents, err := os.ReadFile(filepath.Join(dir, entry.Name()))
-		if err != nil {
-			return nil, fmt.Errorf("read existing item: %w", err)
-		}
-		var item contextmodel.CanonicalContextItem
-		// An unreadable existing item is simply treated as changed.
-		if json.Unmarshal(contents, &item) != nil || item.ID != id {
-			result[id] = existingItem{contents: contents}
-			continue
-		}
-		result[id] = existingItem{contents: contents, recordHash: item.Provenance.RecordHash}
-	}
-	return result, nil
 }

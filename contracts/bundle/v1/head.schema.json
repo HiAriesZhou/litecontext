@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litecontext.dev/contracts/bundle/v1/head.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "snapshot"
+  ],
+  "properties": {
+    "snapshot": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

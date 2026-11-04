@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litecontext.dev/contracts/bundle/v1/manifest.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "version",
+    "projectId",
+    "requiredCapabilities"
+  ],
+  "properties": {
+    "format": {
+      "const": "litecontext-bundle"
+    },
+    "version": {
+      "const": 1
+    },
+    "projectId": {
+      "type": "string",
+      "pattern": "^prj_[0-9a-f]{32}$"
+    },
+    "requiredCapabilities": {
+      "const": [
+        "evidence-v1"
+      ]
+    }
+  }
+}
