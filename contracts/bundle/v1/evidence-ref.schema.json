@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litecontext.dev/contracts/bundle/v1/evidence-ref.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sourceId",
+    "itemId",
+    "recordHash",
+    "startLine",
+    "endLine"
+  ],
+  "properties": {
+    "sourceId": {
+      "type": "string",
+      "pattern": "^src_[0-9a-f]{32}$"
+    },
+    "itemId": {
+      "type": "string",
+      "pattern": "^itm_[0-9a-f]{64}$"
+    },
+    "recordHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "startLine": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "endLine": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

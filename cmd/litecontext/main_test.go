@@ -87,3 +87,55 @@ func captureStdout(t *testing.T, operation func() error) string {
 	}
 	return string(contents)
 }
+
+func TestReadAndLifecycleCommandsRespectPublicScope(t *testing.T) {
+	source := t.TempDir()
+	os.WriteFile(filepath.Join(source, "public.md"), []byte("---\nvisibility: public\n---\n# Shared\n\nPublic shared.\n"), 0600)
+	os.WriteFile(filepath.Join(source, "private.md"), []byte("# private-canary\n\nshared secret.\n"), 0600)
+	dir := filepath.Join(t.TempDir(), "bundle")
+	captureStdout(t, func() error { return run([]string{"bundle", "init", dir, "--json"}) })
+	captureStdout(t, func() error {
+		return run([]string{"collect", "markdown", source, "--bundle", dir, "--name", "notes", "--json"})
+	})
+	output := captureStdout(t, func() error {
+		return run([]string{"search", "shared", "--bundle", dir, "--visibility", "public", "--json"})
+	})
+	if strings.Contains(output, "private-canary") {
+		t.Fatal("private disclosure")
+	}
+	var hits []struct {
+		Ref struct {
+			SourceID   string `json:"sourceId"`
+			ItemID     string `json:"itemId"`
+			RecordHash string `json:"recordHash"`
+		} `json:"ref"`
+	}
+	if err := json.Unmarshal([]byte(output), &hits); err != nil || len(hits) != 1 {
+		t.Fatalf("results: %s %v", output, err)
+	}
+	ref := hits[0].Ref
+	captureStdout(t, func() error {
+		return run([]string{"item", "show", ref.ItemID, "--source", ref.SourceID, "--record-hash", ref.RecordHash, "--bundle", dir, "--json"})
+	})
+	captureStdout(t, func() error {
+		return run([]string{"visibility", "set", ref.ItemID, "--source", ref.SourceID, "--visibility", "private", "--bundle", dir, "--json"})
+	})
+	output = captureStdout(t, func() error {
+		return run([]string{"search", "shared", "--visibility", "public", "--bundle", dir, "--json"})
+	})
+	if strings.TrimSpace(output) != "[]" {
+		t.Fatalf("override leaked: %s", output)
+	}
+	captureStdout(t, func() error { return run([]string{"source", "disconnect", ref.SourceID, "--bundle", dir, "--json"}) })
+	if err := run([]string{"item", "show", ref.ItemID, "--source", ref.SourceID, "--bundle", dir}); err == nil {
+		t.Fatal("disconnected source accessible")
+	}
+	captureStdout(t, func() error { return run([]string{"source", "purge", ref.SourceID, "--bundle", dir, "--json"}) })
+	output = captureStdout(t, func() error { return run([]string{"source", "list", "--bundle", dir, "--json"}) })
+	if strings.TrimSpace(output) != "[]" {
+		t.Fatal("purge did not remove source")
+	}
+	if err := run([]string{"search", "shared", "--record-hash", ref.RecordHash, "--bundle", dir}); err == nil {
+		t.Fatal("unsupported option accepted")
+	}
+}
