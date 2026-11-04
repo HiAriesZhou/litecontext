@@ -26,9 +26,21 @@ The CLI delegates collection to `internal/bundle`, which uses `internal/ingest` 
 
 A successful scan updates current records and retains replaced or removed versions. A source that cannot be scanned does not become an empty successful snapshot. Scan limits and warnings are explicit; absent visibility is private. Visibility is not authorization to send content to a model provider.
 
+## Reading and lifecycle
+
+`item show` resolves source ID, item ID and optional exact record hash. Returned citations always include the selected hash and one-based line range in the stored normalized body. Omitting the hash selects the current version; removed items have no current version. An exact old hash returns an explicitly historical result.
+
+Search uses deterministic, case-insensitive NFC literal matching of all whitespace-separated query terms against current titles, bodies and tags. Chinese substrings require no word-segmentation service. Each distinct term contributes four points for a title match, one for a body match and one for a tag match; item ID breaks ties. Queries are limited to 64 distinct terms. Source and visibility restrictions are applied before matching or scoring. Results contain one cited body line, capped at 512 Unicode code points with an explicit truncation marker; limits are 1–100 results. Historical versions never participate in ordinary search.
+
+The local CLI defaults to owner access. `--source` narrows sources and `--visibility` selects exactly private, team or public records; these filters are not host authentication. `source list` and lifecycle commands are owner management operations. An unavailable item returns the same error for absence, disconnection or exclusion from scope. There is no hidden-result count.
+
+A user visibility override survives collection. `inherit` removes it. Historical public reads require both the historical version's own visibility and the current effective visibility to permit public access. Publishing a new version never publishes private historical text. Removed items are private for historical reads. Disconnecting a source blocks all its current and historical reads and prevents silent reactivation by collection.
+
+`source purge` removes that source and all retained item versions and overrides in a new snapshot, then removes obsolete snapshot and scratch files. Interrupted cleanup must finish under the lock before any later read proceeds. A cleanup failure is an error even if the new HEAD was installed. Original source files are never deleted. These operations do not claim to erase copies retained by other programs, backups or storage hardware.
+
 ## Information boundaries
 
-Knowledge represents retrievable source material. Memory represents scoped durable conclusions with evidence and correction history. Task state represents temporary goals, progress and checks. Context selects information for a task. Memory, task-state persistence, retrieval, context delivery and host integration are not implemented yet.
+Knowledge represents retrievable source material. Memory represents scoped durable conclusions with evidence and correction history. Task state represents temporary goals, progress and checks. Context selects information for a task. Memory, task-state persistence, context delivery and host integration are not implemented yet.
 
 CLI, stdio MCP and host adapters must share one core. A management interface must not create a second authoritative store. Source content remains data, not executable instructions or authorization.
 
