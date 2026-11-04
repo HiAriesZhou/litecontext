@@ -1,0 +1,9 @@
+/bin/
+/dist/
+.env
+.env.*
+*.log
+.DS_Store
+coverage/
+.litecontext/
+.claude/*.local.md

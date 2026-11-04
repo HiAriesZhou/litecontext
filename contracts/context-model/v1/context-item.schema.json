@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litecontext.dev/contracts/context-model/v1/context-item.schema.json",
+  "title": "LiteContext ContextItem",
+  "description": "The canonical, portable normalized content record. ContextItem is independent from the runtime's SQLite schema and all derived retrieval indexes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "source", "content", "provenance", "recordRevision", "canonicalRevision"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "id": { "type": "string", "pattern": "^itm_[0-9a-f]{64}$" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "externalId"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^src_[0-9a-f]{32}$" },
+        "type": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "externalId": { "type": "string", "maxLength": 512 },
+        "connector": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "title", "body"],
+      "properties": {
+        "format": { "enum": ["text", "markdown", "html"] },
+        "title": { "type": "string", "maxLength": 4096 },
+        "body": { "type": "string", "maxLength": 8388608 },
+        "summary": { "type": "string", "maxLength": 16384 }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observedAt", "contentHash", "recordHash"],
+      "properties": {
+        "sourceURI": { "type": "string", "maxLength": 8192 },
+        "locator": { "type": "string", "maxLength": 8192 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "contentHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "recordHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tags": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } },
+        "visibility": { "enum": ["private", "team", "public"] },
+        "confidence": { "enum": ["low", "medium", "high"] },
+        "stale": { "type": "boolean" },
+        "webURL": { "type": "string", "maxLength": 8192 }
+      }
+    },
+    "extensions": { "type": "object", "maxProperties": 32, "additionalProperties": true },
+    "recordRevision": { "type": "integer", "minimum": 0 },
+    "canonicalRevision": { "type": "integer", "minimum": 0 }
+  }
+}

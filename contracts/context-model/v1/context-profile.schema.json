@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litecontext.dev/contracts/context-model/v1/context-profile.schema.json",
+  "title": "LiteContext ContextProfile",
+  "description": "A retrieval selection and ranking boundary. A ContextProfile is not an authorization boundary.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "sources", "createdAt", "updatedAt", "recordRevision", "canonicalRevision"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "description": { "type": "string", "maxLength": 4096 },
+    "sources": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceId"],
+        "properties": {
+          "sourceId": { "type": "string", "pattern": "^src_[0-9a-f]{32}$" },
+          "folders": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 4096 } },
+          "tags": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } },
+          "files": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 4096 } },
+          "collections": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } },
+          "databases": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } }
+        }
+      }
+    },
+    "includeTags": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } },
+    "excludeTags": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } },
+    "includeGlobs": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 4096 } },
+    "excludeGlobs": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 4096 } },
+    "visibility": { "type": "array", "maxItems": 8, "items": { "enum": ["private", "team", "public"] } },
+    "privacy": { "type": "object", "additionalProperties": true },
+    "freshness": { "type": "object", "additionalProperties": true },
+    "retrieval": { "type": "object", "additionalProperties": true },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "recordRevision": { "type": "integer", "minimum": 0 },
+    "canonicalRevision": { "type": "integer", "minimum": 0 }
+  }
+}

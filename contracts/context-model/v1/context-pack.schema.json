@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litecontext.dev/contracts/context-model/v1/context-pack.schema.json",
+  "title": "LiteContext Context Pack v1",
+  "description": "Portable, deterministic Agent Context export. Device-local paths, credentials, cursors, jobs, bookmarks, and index internals are forbidden by this closed schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "digest", "generatedAt", "contractDigest", "request", "evidence"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "id": { "type": "string", "pattern": "^pack_[0-9a-f]{64}$" },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "contractDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "request": { "type": "object", "additionalProperties": false, "required": ["query", "profileId", "limit", "retrievalState"], "properties": { "query": { "type": "string", "maxLength": 512 }, "profileId": { "type": "string", "maxLength": 256 }, "limit": { "type": "integer", "minimum": 1, "maximum": 20 }, "retrievalState": { "enum": ["indexed", "fallback"] }, "canonicalRevision": { "type": "integer", "minimum": 0 }, "profileRevision": { "type": "integer", "minimum": 0 }, "indexInputRevision": { "type": "integer", "minimum": 0 }, "indexGeneration": { "type": "integer", "minimum": 0 } } },
+    "evidence": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "type": "object", "additionalProperties": false, "required": ["itemId", "chunkId", "content", "citation", "source", "contentHash", "observedAt"], "properties": { "itemId": { "type": "string", "maxLength": 256 }, "chunkId": { "type": "string", "maxLength": 256 }, "content": { "type": "string", "maxLength": 32768 }, "headingPath": { "type": "array", "items": { "type": "string", "maxLength": 4096 } }, "citation": { "type": "object", "additionalProperties": false, "required": ["title", "path", "startLine", "endLine"], "properties": { "title": { "type": "string", "maxLength": 4096 }, "path": { "type": "string", "maxLength": 8192 }, "startLine": { "type": "integer", "minimum": 1 }, "endLine": { "type": "integer", "minimum": 1 } } }, "source": { "type": "object", "additionalProperties": false, "required": ["id", "type", "externalId"], "properties": { "id": { "type": "string", "maxLength": 256 }, "type": { "type": "string", "maxLength": 128 }, "externalId": { "type": "string", "maxLength": 512 }, "uri": { "type": "string", "maxLength": 8192 } } }, "contentHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }, "observedAt": { "type": "string", "format": "date-time" } } } }
+  }
+}

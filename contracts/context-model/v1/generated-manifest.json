@@ -1,0 +1,26 @@
+{
+  "generatorVersion": "context-model-bindgen/v1",
+  "inputs": [
+    {
+      "name": "context-item-batch.schema.json",
+      "sha256": "2007b7770cdda146bf39c91b506c1c462d0b4ca19814842fdaf1c88e8b2b272e"
+    },
+    {
+      "name": "context-item.schema.json",
+      "sha256": "67c1ec646575960529a3d9d6941adbc69a1b5ba220b162180061033e5e06e041"
+    },
+    {
+      "name": "context-pack.schema.json",
+      "sha256": "ad7d946000ced7093a6dbaced77d28f28cee22f9a89937d3e393d7e846735d20"
+    },
+    {
+      "name": "context-profile.schema.json",
+      "sha256": "6d6c90f8067a393d4c885cf08c694c99417c61f2da084e29dc8a1842c4519902"
+    },
+    {
+      "name": "source-record.schema.json",
+      "sha256": "ed5762274a5499baf64c8613ea3be5cd450de3e5a822b096f9d341da35a7d1a9"
+    }
+  ],
+  "bundleSha256": "e73d2eab34c3e3df3827743d1ade316d5560ef1e1dec86b682218861b8236fd8"
+}
