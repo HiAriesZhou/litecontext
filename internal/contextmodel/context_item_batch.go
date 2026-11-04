@@ -42,7 +42,7 @@ func ValidateContextItemBatch(batch GeneratedContextItemBatch, expectedSourceID 
 	if batch.Mode != "incremental" && batch.Mode != "snapshot" {
 		return fmt.Errorf("ContextItem Batch mode is invalid")
 	}
-	if len(batch.Items) > 500 || len(batch.Deletions) > 500 || len(batch.Items)+len(batch.Deletions) == 0 {
+	if len(batch.Items) > 500 || len(batch.Deletions) > 500 || (batch.Mode == "incremental" && len(batch.Items)+len(batch.Deletions) == 0) || len(batch.Items)+len(batch.Deletions) > 500 {
 		return fmt.Errorf("ContextItem Batch must contain 1 to 500 item mutations")
 	}
 	if batch.Mode == "snapshot" && len(batch.Deletions) != 0 {

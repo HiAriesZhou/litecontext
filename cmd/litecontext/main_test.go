@@ -2,11 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/HiAriesZhou/litecontext/internal/contextmodel"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/HiAriesZhou/litecontext/internal/buildinfo"
 )
@@ -54,7 +57,7 @@ func TestBundleCommandsRejectIncompleteArguments(t *testing.T) {
 		{"collect"},
 		{"collect", "markdown", t.TempDir(), "--bundle", bundleDir},
 		{"collect", "markdown", t.TempDir(), "--name", "notes"},
-		{"collect", "git", t.TempDir(), "--bundle", bundleDir, "--name", "notes"},
+		{"collect", "unsupported", t.TempDir(), "--bundle", bundleDir, "--name", "notes"},
 	} {
 		if err := run(arguments); err == nil || !strings.Contains(err.Error(), "usage:") {
 			t.Errorf("%v: expected a usage error, got %v", arguments, err)
@@ -138,4 +141,52 @@ func TestReadAndLifecycleCommandsRespectPublicScope(t *testing.T) {
 	if err := run([]string{"search", "shared", "--record-hash", ref.RecordHash, "--bundle", dir}); err == nil {
 		t.Fatal("unsupported option accepted")
 	}
+}
+
+func TestGitAndProducerCLIUseSameReadableBundle(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "bundle")
+	captureStdout(t, func() error { return run([]string{"bundle", "init", dir, "--json"}) })
+	repo := t.TempDir()
+	for _, args := range [][]string{{"init", "-b", "main"}, {"-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid", "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-m", "Synthetic Git constraint"}} {
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		if raw, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("fixture git %v %s", err, raw)
+		}
+	}
+	output := captureStdout(t, func() error {
+		return run([]string{"collect", "git", repo, "--name", "repo", "--bundle", dir, "--json"})
+	})
+	if !strings.Contains(output, `"added": 1`) {
+		t.Fatalf("Git output %s", output)
+	}
+	output = captureStdout(t, func() error { return run([]string{"source", "add", "external", "--bundle", dir, "--json"}) })
+	var source struct {
+		Record struct {
+			ID string `json:"id"`
+		} `json:"record"`
+	}
+	if err := json.Unmarshal([]byte(output), &source); err != nil || source.Record.ID == "" {
+		t.Fatal("missing allocated producer identity")
+	}
+	item := contextmodel.CanonicalContextItem{SchemaVersion: contextmodel.SchemaVersion, ID: contextmodel.CanonicalItemID(source.Record.ID, "rule.md"), Source: contextmodel.CanonicalSourceRef{ID: source.Record.ID, Type: "producer", ExternalID: "rule.md"}, Content: contextmodel.Content{Format: "text", Title: "Imported constraint", Body: "Synthetic producer constraint"}, Provenance: contextmodel.CanonicalProvenance{Locator: "rule.md", ObservedAt: time.Now().UTC().Format(time.RFC3339Nano)}}
+	item.Provenance.ContentHash = item.ComputedContentHash()
+	item.Provenance.RecordHash = item.ComputedRecordHash()
+	batch := map[string]any{"schemaVersion": "1.0", "mode": "snapshot", "items": []contextmodel.CanonicalContextItem{item}, "deletions": []string{}}
+	raw, _ := json.Marshal(batch)
+	path := filepath.Join(t.TempDir(), "batch.json")
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	output = captureStdout(t, func() error {
+		return run([]string{"import", path, "--source", source.Record.ID, "--bundle", dir, "--json"})
+	})
+	if !strings.Contains(output, `"added": 1`) {
+		t.Fatalf("import output %s", output)
+	}
+	output = captureStdout(t, func() error { return run([]string{"search", "constraint", "--bundle", dir, "--json"}) })
+	var hits []any
+	if err := json.Unmarshal([]byte(output), &hits); err != nil || len(hits) != 2 {
+		t.Fatalf("unified search %v %s", err, output)
+	}
+	captureStdout(t, func() error { return run([]string{"bundle", "validate", "--bundle", dir, "--json"}) })
 }

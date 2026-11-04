@@ -7,6 +7,7 @@ import (
 	"github.com/HiAriesZhou/litecontext/internal/bundle"
 	"os"
 	"strings"
+	"time"
 )
 
 func runRead(command string, args []string) error {
@@ -19,7 +20,7 @@ func runRead(command string, args []string) error {
 	}
 	if command == "source" {
 		if len(args) == 0 {
-			return fmt.Errorf("usage: lc source list|disconnect|purge [SOURCE_ID] --bundle DIR [--json]")
+			return fmt.Errorf("usage: lc source add|list|disconnect|purge [SOURCE_ID] --bundle DIR [--json]")
 		}
 	}
 	action := ""
@@ -62,6 +63,11 @@ func runRead(command string, args []string) error {
 	switch command {
 	case "source":
 		switch action {
+		case "add":
+			if flags.NArg() != 1 {
+				return fmt.Errorf("usage: lc source add NAME --bundle DIR [--json]")
+			}
+			result, err = b.AddProducer(ctx, flags.Arg(0), time.Now())
 		case "list":
 			if flags.NArg() != 0 {
 				return fmt.Errorf("%s", usage)
