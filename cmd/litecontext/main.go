@@ -91,6 +91,7 @@ func printUsage(output *os.File) {
 Usage:
   lc version [--json]
   lc bundle init DIR [--json]
+  lc bundle validate --bundle DIR [--json]
   lc collect markdown PATH --bundle DIR --name NAME [--json]
 
 The context bundle is specified in docs/architecture/overview.md. Reusing a

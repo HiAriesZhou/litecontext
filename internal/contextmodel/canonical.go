@@ -72,8 +72,8 @@ type CanonicalSourceRef struct {
 type CanonicalProvenance struct {
 	SourceURI   string `json:"sourceURI,omitempty"`
 	Locator     string `json:"locator,omitempty"`
-	CreatedAt   string `json:"createdAt,omitempty"`
-	UpdatedAt   string `json:"updatedAt,omitempty"`
+	CreatedAt   string `json:"createdAt,omitempty" nonempty:"true"`
+	UpdatedAt   string `json:"updatedAt,omitempty" nonempty:"true"`
 	ObservedAt  string `json:"observedAt"`
 	ContentHash string `json:"contentHash"`
 	RecordHash  string `json:"recordHash"`
@@ -81,8 +81,8 @@ type CanonicalProvenance struct {
 
 type CanonicalAttributes struct {
 	Tags       []string `json:"tags,omitempty"`
-	Visibility string   `json:"visibility,omitempty"`
-	Confidence string   `json:"confidence,omitempty"`
+	Visibility string   `json:"visibility,omitempty" enum:"private,team,public"`
+	Confidence string   `json:"confidence,omitempty" enum:"low,medium,high"`
 	Stale      bool     `json:"stale,omitempty"`
 	WebURL     string   `json:"webURL,omitempty"`
 }
@@ -271,8 +271,8 @@ func (item CanonicalContextItem) ComputedRecordHash() string {
 		Provenance    struct {
 			SourceURI   string `json:"sourceURI,omitempty"`
 			Locator     string `json:"locator,omitempty"`
-			CreatedAt   string `json:"createdAt,omitempty"`
-			UpdatedAt   string `json:"updatedAt,omitempty"`
+			CreatedAt   string `json:"createdAt,omitempty" nonempty:"true"`
+			UpdatedAt   string `json:"updatedAt,omitempty" nonempty:"true"`
 			ContentHash string `json:"contentHash"`
 		} `json:"provenance"`
 		Attributes CanonicalAttributes `json:"attributes,omitempty"`
@@ -285,8 +285,8 @@ func (item CanonicalContextItem) ComputedRecordHash() string {
 		Provenance: struct {
 			SourceURI   string `json:"sourceURI,omitempty"`
 			Locator     string `json:"locator,omitempty"`
-			CreatedAt   string `json:"createdAt,omitempty"`
-			UpdatedAt   string `json:"updatedAt,omitempty"`
+			CreatedAt   string `json:"createdAt,omitempty" nonempty:"true"`
+			UpdatedAt   string `json:"updatedAt,omitempty" nonempty:"true"`
 			ContentHash string `json:"contentHash"`
 		}{item.Provenance.SourceURI, item.Provenance.Locator, item.Provenance.CreatedAt, item.Provenance.UpdatedAt, item.Provenance.ContentHash},
 		Attributes: item.Attributes,

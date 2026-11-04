@@ -11,6 +11,30 @@ import (
 )
 
 func runBundle(arguments []string) error {
+	if len(arguments) > 0 && arguments[0] == "validate" {
+		flags := flag.NewFlagSet("bundle validate", flag.ContinueOnError)
+		dir := flags.String("bundle", "", "bundle directory")
+		jsonOutput := flags.Bool("json", false, "JSON output")
+		if err := flags.Parse(commandFlagsFirst(arguments[1:])); err != nil {
+			return err
+		}
+		if *dir == "" || flags.NArg() != 0 {
+			return fmt.Errorf("usage: lc bundle validate --bundle DIR [--json]")
+		}
+		b, err := bundle.Open(*dir)
+		if err != nil {
+			return err
+		}
+		generation, err := b.Validate(context.Background())
+		if err != nil {
+			return err
+		}
+		if *jsonOutput {
+			return writeJSON(map[string]any{"valid": true, "generation": generation})
+		}
+		fmt.Fprintln(os.Stdout, "Bundle valid")
+		return nil
+	}
 	if len(arguments) == 0 || arguments[0] != "init" {
 		return fmt.Errorf("usage: lc bundle init DIR [--json]")
 	}

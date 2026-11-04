@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -23,9 +24,11 @@ func TestInitCreatesManifestAndIgnoreFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	manifest := readFile(t, filepath.Join(dir, "bundle.json"))
-	if manifest != `{"format":"litecontext-bundle","version":0}`+"\n" {
-		t.Fatalf("manifest = %q", manifest)
+	var m Manifest
+	if err := json.Unmarshal([]byte(manifest), &m); err != nil || m.Version != 1 || !projectPattern.MatchString(m.ProjectID) {
+		t.Fatalf("manifest: %s", manifest)
 	}
+
 	if ignore := readFile(t, filepath.Join(dir, ".gitignore")); ignore != "*\n" {
 		t.Fatalf(".gitignore = %q", ignore)
 	}
@@ -122,30 +125,34 @@ func TestRecollectingAppliesAddsChangesAndRemovals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	keptPath := itemPath(b.Dir(), first.SourceID, "keep.md")
-	keptBytes := readFile(t, keptPath)
+	before := testState(t, b.Dir())
+	keptID := contextmodel.CanonicalItemID(first.SourceID, "keep.md")
+	changedID := contextmodel.CanonicalItemID(first.SourceID, "change.md")
+	oldHash := before.Items[changedID].Current
 	writeFile(t, filepath.Join(source, "change.md"), "# Changed\n\nNew text.\n")
-	if err := os.Remove(filepath.Join(source, "nested", "remove.md")); err != nil {
+	if err = os.Remove(filepath.Join(source, "nested", "remove.md")); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(source, "added.md"), "# Added\n")
-
 	result, err := b.CollectMarkdown(context.Background(), source, "notes", testNow.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.Added != 1 || result.Updated != 1 || result.Removed != 1 || result.Unchanged != 1 {
-		t.Fatalf("result = %+v", result)
+		t.Fatalf("result: %+v", result)
 	}
-	if readFile(t, keptPath) != keptBytes {
-		t.Fatal("unchanged item was rewritten")
+	after := testState(t, b.Dir())
+	a, _ := encodeCanonical(before.Items[keptID])
+	z, _ := encodeCanonical(after.Items[keptID])
+	if !bytes.Equal(a, z) {
+		t.Fatal("unchanged version rewritten")
 	}
-	if _, err := os.Stat(itemPath(b.Dir(), first.SourceID, "nested/remove.md")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("removed item still present: %v", err)
+	if len(after.Items[changedID].Versions) != 2 || after.Items[changedID].Versions[oldHash].Content.Title != "Change" {
+		t.Fatal("history lost")
 	}
-	changed := readItem(t, itemPath(b.Dir(), first.SourceID, "change.md"))
-	if changed.Content.Title != "Changed" || changed.Provenance.ObservedAt != testNow.Add(time.Hour).Format(time.RFC3339Nano) {
-		t.Fatalf("changed item = %+v", changed)
+	removed := after.Items[contextmodel.CanonicalItemID(first.SourceID, "nested/remove.md")]
+	if removed.Current != "" || len(removed.Versions) != 1 {
+		t.Fatal("removed item not retained as history")
 	}
 }
 
@@ -222,8 +229,7 @@ func TestCollectNormalizesUnicodeToNFC(t *testing.T) {
 
 func TestCollectDoesNotModifySourceFilesOrOverrides(t *testing.T) {
 	b, source := newBundleAndSource(t)
-	overrides := filepath.Join(b.Dir(), "overrides", "visibility.json")
-	writeFile(t, overrides, `{"itm_0":"public"}`)
+
 	sourceBefore := snapshotTree(t, source)
 	if _, err := b.CollectMarkdown(context.Background(), source, "notes", testNow); err != nil {
 		t.Fatal(err)
@@ -231,42 +237,69 @@ func TestCollectDoesNotModifySourceFilesOrOverrides(t *testing.T) {
 	if !equalTrees(sourceBefore, snapshotTree(t, source)) {
 		t.Fatal("collection modified the source folder")
 	}
-	if readFile(t, overrides) != `{"itm_0":"public"}` {
-		t.Fatal("collection modified visibility overrides")
-	}
 }
 
-func TestInterruptedCollectionKeepsPreviousSnapshot(t *testing.T) {
-	for _, stage := range []string{"before-swap", "after-backup"} {
+func TestProcessInterruptionHasOneCompleteSnapshot(t *testing.T) {
+	for _, stage := range []string{"before-head", "after-head"} {
 		t.Run(stage, func(t *testing.T) {
 			b, source := newBundleAndSource(t)
-			first, err := b.CollectMarkdown(context.Background(), source, "notes", testNow)
+			_, err := b.CollectMarkdown(context.Background(), source, "notes", testNow)
 			if err != nil {
 				t.Fatal(err)
 			}
-			before := snapshotTree(t, filepath.Join(b.Dir(), "items"))
 			writeFile(t, filepath.Join(source, "change.md"), "# Changed\n")
-
-			failAt = stage
-			_, err = b.CollectMarkdown(context.Background(), source, "notes", testNow.Add(time.Hour))
-			failAt = ""
-			if err == nil {
-				t.Fatal("expected injected failure")
+			exe, _ := os.Executable()
+			cmd := exec.Command(exe, "-test.run=^TestCrashHelper$")
+			cmd.Env = append(os.Environ(), "LC_CRASH="+stage, "LC_BUNDLE="+b.Dir(), "LC_SOURCE="+source)
+			err = cmd.Run()
+			var exit *exec.ExitError
+			if !errors.As(err, &exit) || exit.ExitCode() != 90 {
+				t.Fatalf("child: %v", err)
 			}
-
 			reopened, err := Open(b.Dir())
 			if err != nil {
-				t.Fatalf("reopen after interruption: %v", err)
+				t.Fatal(err)
 			}
-			if after := snapshotTree(t, filepath.Join(reopened.Dir(), "items")); !equalTrees(before, after) {
-				t.Fatalf("previous snapshot not intact:\nbefore %v\nafter  %v", keys(before), keys(after))
+			state := testState(t, b.Dir())
+			wantGen := uint64(2)
+			wantTitle := "Change"
+			if stage == "after-head" {
+				wantGen = 3
+				wantTitle = "Changed"
 			}
-			result, err := reopened.CollectMarkdown(context.Background(), source, "notes", testNow.Add(2*time.Hour))
-			if err != nil || result.SourceID != first.SourceID || result.Updated != 1 {
-				t.Fatalf("collection after recovery = %+v, %v", result, err)
+			if state.Generation != wantGen {
+				t.Fatalf("generation %d", state.Generation)
+			}
+			for _, item := range readItems(t, b.Dir(), readSources(t, b.Dir())[0].ID) {
+				if item.Source.ExternalID == "change.md" && item.Content.Title != wantTitle {
+					t.Fatal("mixed snapshot")
+				}
+			}
+			if _, err = reopened.CollectMarkdown(context.Background(), source, "notes", testNow.Add(2*time.Hour)); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}
+}
+func TestCrashHelper(t *testing.T) {
+	if os.Getenv("LC_CRASH") == "" {
+		return
+	}
+	b, err := Open(os.Getenv("LC_BUNDLE"))
+	if err != nil {
+		os.Exit(91)
+	}
+	b.commitHook = func(stage string) error {
+		if stage == os.Getenv("LC_CRASH") {
+			os.Exit(90)
+		}
+		return nil
+	}
+	_, err = b.CollectMarkdown(context.Background(), os.Getenv("LC_SOURCE"), "notes", testNow.Add(time.Hour))
+	if err != nil {
+		os.Exit(92)
+	}
+	os.Exit(93)
 }
 
 func TestCollectRequiresDirectory(t *testing.T) {
@@ -309,55 +342,35 @@ func newBundleAndSource(t *testing.T) (*Bundle, string) {
 	return b, source
 }
 
-func itemPath(bundleDir, sourceID, externalID string) string {
-	return filepath.Join(bundleDir, "items", sourceID, contextmodel.CanonicalItemID(sourceID, externalID)+".json")
-}
-
-func readSources(t *testing.T, dir string) []contextmodel.CanonicalSourceRecord {
+func testState(t *testing.T, dir string) snapshot {
 	t.Helper()
-	paths, _ := filepath.Glob(filepath.Join(dir, "sources", "*.json"))
-	records := make([]contextmodel.CanonicalSourceRecord, 0, len(paths))
-	for _, path := range paths {
-		var record contextmodel.CanonicalSourceRecord
-		if err := json.Unmarshal([]byte(readFile(t, path)), &record); err != nil {
-			t.Fatal(err)
-		}
-		if err := record.Validate(); err != nil {
-			t.Fatalf("source %s invalid: %v", path, err)
-		}
-		if filepath.Base(path) != record.ID+".json" {
-			t.Fatalf("source file %s does not match id %s", path, record.ID)
-		}
-		records = append(records, record)
-	}
-	return records
-}
-
-func readItems(t *testing.T, dir, sourceID string) []contextmodel.CanonicalContextItem {
-	t.Helper()
-	paths, _ := filepath.Glob(filepath.Join(dir, "items", sourceID, "*.json"))
-	items := make([]contextmodel.CanonicalContextItem, 0, len(paths))
-	for _, path := range paths {
-		item := readItem(t, path)
-		if filepath.Base(path) != item.ID+".json" {
-			t.Fatalf("item file %s does not match id %s", path, item.ID)
-		}
-		items = append(items, item)
-	}
-	return items
-}
-
-func readItem(t *testing.T, path string) contextmodel.CanonicalContextItem {
-	t.Helper()
-	var item contextmodel.CanonicalContextItem
-	contents := readFile(t, path)
-	if !strings.HasSuffix(contents, "\n") {
-		t.Fatalf("%s lacks a trailing newline", path)
-	}
-	if err := json.Unmarshal([]byte(contents), &item); err != nil {
+	b, err := Open(dir)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return item
+	var value snapshot
+	if err = b.access(context.Background(), false, func(s *snapshot) error { value = *s; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	return value
+}
+func readSources(t *testing.T, dir string) []contextmodel.CanonicalSourceRecord {
+	state := testState(t, dir)
+	out := []contextmodel.CanonicalSourceRecord{}
+	for _, s := range state.Sources {
+		out = append(out, s.Record)
+	}
+	return out
+}
+func readItems(t *testing.T, dir, sourceID string) []contextmodel.CanonicalContextItem {
+	state := testState(t, dir)
+	out := []contextmodel.CanonicalContextItem{}
+	for _, entry := range state.Items {
+		if entry.SourceID == sourceID && entry.Current != "" {
+			out = append(out, entry.Versions[entry.Current])
+		}
+	}
+	return out
 }
 
 func hasWarning(result CollectResult, path, reason string) bool {
@@ -477,4 +490,212 @@ func TestCollectExplainsWhyTheSourceFolderIsUnusable(t *testing.T) {
 			t.Errorf("%s: error = %v, want it to name the path and contain %q", path, err, want)
 		}
 	}
+}
+
+func TestV0AndMalformedManifestNeverModified(t *testing.T) {
+	for _, raw := range []string{`{"format":"litecontext-bundle","version":0}`, `{"format":"litecontext-bundle","version":1,"version":1}`, `{} {}`, `null`} {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "bundle.json"), raw)
+		before := snapshotTree(t, dir)
+		if _, err := Open(dir); err == nil {
+			t.Fatalf("accepted %s", raw)
+		}
+		if !equalTrees(before, snapshotTree(t, dir)) {
+			t.Fatal("invalid bundle modified")
+		}
+	}
+}
+func TestStaleHandlesCannotOverwriteConcurrentCommit(t *testing.T) {
+	b, source := newBundleAndSource(t)
+	other, err := Open(b.Dir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.CollectMarkdown(context.Background(), source, "first", testNow); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = other.CollectMarkdown(context.Background(), source, "second", testNow); !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected conflict: %v", err)
+	}
+	if len(readSources(t, b.Dir())) != 1 {
+		t.Fatal("lost update")
+	}
+}
+func TestSymlinkBundleFilesRejected(t *testing.T) {
+	for _, name := range []string{"bundle.json", "HEAD", ".lock"} {
+		t.Run(name, func(t *testing.T) {
+			b := newBundle(t)
+			path := filepath.Join(b.Dir(), name)
+			data, err := os.ReadFile(path)
+			if os.IsNotExist(err) {
+				data = []byte("")
+			}
+			outside := filepath.Join(t.TempDir(), "outside")
+			writeFile(t, outside, string(data))
+			os.Remove(path)
+			if err = os.Symlink(outside, path); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = Open(b.Dir()); err == nil {
+				t.Fatal("accepted symlink")
+			}
+		})
+	}
+}
+func TestLockCancellationDoesNotRemoveOtherWriterData(t *testing.T) {
+	b := newBundle(t)
+	r, err := os.OpenRoot(b.Dir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	unlock, err := lockBundle(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	writeFile(t, filepath.Join(b.Dir(), "snapshots", "pending"), "writer-owned")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	_, err = b.Validate(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("cancellation: %v", err)
+	}
+	if readFile(t, filepath.Join(b.Dir(), "snapshots", "pending")) != "writer-owned" {
+		t.Fatal("removed active writer data")
+	}
+}
+
+func TestRehashedSnapshotRejectsSchemaViolations(t *testing.T) {
+	for _, mutate := range []func(string) string{
+		func(s string) string { return strings.Replace(s, `"versions":`, `"visibility":"","versions":`, 1) },
+		func(s string) string {
+			return strings.Replace(s, `"attributes":{`, `"attributes":{"visibility":"",`, 1)
+		},
+		func(s string) string { return strings.Replace(s, `"body":`, `"unknownBody":`, 1) },
+	} {
+		b, source := newBundleAndSource(t)
+		if _, err := b.CollectMarkdown(context.Background(), source, "notes", testNow); err != nil {
+			t.Fatal(err)
+		}
+		r, err := os.OpenRoot(b.Dir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := readManifest(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, live, err := loadSnapshot(r, m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := readRegular(r, live, maximumSnapshotBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bad := []byte(mutate(string(raw)))
+		if bytes.Equal(bad, raw) {
+			t.Fatal("fixture unchanged")
+		}
+		hash := digest(bad)
+		name := "snapshots/" + strings.TrimPrefix(hash, "sha256:") + ".json"
+		if err = atomicWrite(r, name, bad); err != nil {
+			t.Fatal(err)
+		}
+		pointer, _ := encodeCanonical(head{Snapshot: hash})
+		if err = atomicWrite(r, "HEAD", pointer); err != nil {
+			t.Fatal(err)
+		}
+		r.Close()
+		if _, err = Open(b.Dir()); err == nil {
+			t.Fatal("invalid rehashed snapshot accepted")
+		}
+	}
+}
+func TestConcurrentProcessesConflictAndCanExplicitlyRetry(t *testing.T) {
+	b, source := newBundleAndSource(t)
+	barrier := t.TempDir()
+	exe, _ := os.Executable()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	children := []*exec.Cmd{}
+	for _, name := range []string{"first", "second"} {
+		cmd := exec.CommandContext(ctx, exe, "-test.run=^TestWriterHelper$")
+		cmd.Env = append(os.Environ(), "LC_WRITER="+name, "LC_BUNDLE="+b.Dir(), "LC_SOURCE="+source, "LC_BARRIER="+barrier)
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		children = append(children, cmd)
+	}
+	for {
+		_, a := os.Stat(filepath.Join(barrier, "first"))
+		_, z := os.Stat(filepath.Join(barrier, "second"))
+		if a == nil && z == nil {
+			break
+		}
+		if ctx.Err() != nil {
+			t.Fatal("writers failed to reach barrier")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	writeFile(t, filepath.Join(barrier, "go"), "")
+	success, conflict := 0, 0
+	for _, cmd := range children {
+		err := cmd.Wait()
+		var exit *exec.ExitError
+		if err == nil {
+			success++
+		} else if errors.As(err, &exit) && exit.ExitCode() == 75 {
+			conflict++
+		} else {
+			t.Fatalf("writer exit: %v", err)
+		}
+	}
+	if success != 1 || conflict != 1 || len(readSources(t, b.Dir())) != 1 {
+		t.Fatalf("success=%d conflict=%d", success, conflict)
+	}
+	existing := readSources(t, b.Dir())[0].Name
+	retry := "first"
+	if existing == retry {
+		retry = "second"
+	}
+	fresh, err := Open(b.Dir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = fresh.CollectMarkdown(ctx, source, retry, testNow); err != nil {
+		t.Fatal(err)
+	}
+	if len(readSources(t, b.Dir())) != 2 {
+		t.Fatal("explicit retry lost source")
+	}
+}
+func TestWriterHelper(t *testing.T) {
+	name := os.Getenv("LC_WRITER")
+	if name == "" {
+		return
+	}
+	b, err := Open(os.Getenv("LC_BUNDLE"))
+	if err != nil {
+		os.Exit(91)
+	}
+	barrier := os.Getenv("LC_BARRIER")
+	if os.WriteFile(filepath.Join(barrier, name), nil, 0600) != nil {
+		os.Exit(92)
+	}
+	for {
+		if _, err = os.Stat(filepath.Join(barrier, "go")); err == nil {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	_, err = b.CollectMarkdown(context.Background(), os.Getenv("LC_SOURCE"), name, testNow)
+	if errors.Is(err, ErrConflict) {
+		os.Exit(75)
+	}
+	if err != nil {
+		os.Exit(93)
+	}
+	os.Exit(0)
 }

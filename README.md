@@ -6,16 +6,17 @@ LiteContext keeps source files in place and uses inspectable, portable files wit
 
 ## Status
 
-Early development. The current CLI initializes a context bundle and collects Markdown folders, including Markdown files in Obsidian vaults. Memory management, search, context delivery, MCP, and automatic host integration are not implemented yet.
+Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders, including Markdown files in Obsidian vaults. Memory management, search, context delivery, MCP, and automatic host integration are not implemented yet.
 
 ## Quick start
 
-Requires Go 1.26 or later.
+Requires Go 1.26 or later on macOS or Linux.
 
 ```sh
 go build -o ./bin/lc ./cmd/litecontext
 ./bin/lc bundle init /path/to/new-bundle
 ./bin/lc collect markdown /path/to/notes --bundle /path/to/new-bundle --name notes --json
+./bin/lc bundle validate --bundle /path/to/new-bundle --json
 ```
 
 The bundle destination must be absent or empty. Reuse the same source name to refresh its snapshot. Source files are read only. Keep bundles outside source repositories when possible: they contain collected content and should not be committed.
@@ -27,7 +28,8 @@ The bundle destination must be absent or empty. Reuse the same source name to re
 - `internal/bundle/` — file storage and Markdown collection.
 - `internal/contextmodel/` — typed records, validation, stable IDs and canonical JSON.
 - `internal/ingest/` — read-only Markdown scanning.
-- `contracts/context-model/v1/` — versioned JSON schemas.
+- `contracts/context-model/v1/` — portable record schemas.
+- `contracts/bundle/v1/` — bundle manifest and snapshot schemas.
 - `docs/` — current architecture and contributor instructions.
 
 See [Architecture](docs/architecture/overview.md) and [Contributing](CONTRIBUTING.md).
