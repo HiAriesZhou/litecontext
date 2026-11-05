@@ -33,6 +33,8 @@ func run(arguments []string) error {
 		return runImport(arguments[1:])
 	case "source", "item", "search", "visibility":
 		return runRead(arguments[0], arguments[1:])
+	case "serve":
+		return runServe(arguments[1:])
 	case "help", "--help", "-h":
 		printUsage(os.Stdout)
 		return nil
@@ -102,6 +104,7 @@ Usage:
   lc item show ITEM_ID --source SOURCE_ID --bundle DIR [--record-hash HASH] [--json]
   lc search QUERY --bundle DIR [--source SOURCE_ID,...] [--visibility public|team|private] [--limit N] [--json]
   lc visibility set ITEM_ID --source SOURCE_ID --visibility private|team|public|inherit --bundle DIR [--json]
+  lc serve --bundle DIR [--once]
 
 The context bundle is specified in docs/architecture/overview.md. Reusing a
 source name refreshes that source; source files are only read.
