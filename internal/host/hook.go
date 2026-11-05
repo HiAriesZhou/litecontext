@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 	"unicode"
@@ -25,11 +26,33 @@ const (
 	maxQueryTerms  = 64
 )
 
+var errInvalidHook = errors.New("invalid hook input")
+
 type hookInput struct {
 	HookEventName string `json:"hook_event_name"`
 	SessionID     string `json:"session_id"`
 	Prompt        string `json:"prompt"`
 	Source        string `json:"source"`
+}
+
+// decodedHook is the host-neutral event a profile decoder returns.
+type decodedHook struct {
+	eventName string
+	sessionID string
+	prompt    string
+	source    string
+}
+
+func decodeCodingAgentHook(input []byte) (decodedHook, error) {
+	input = normalizeHookInput(input)
+	if len(input) == 0 || len(input) > MaxInput {
+		return decodedHook{}, errInvalidHook
+	}
+	var in hookInput
+	if json.Unmarshal(input, &in) != nil || strings.TrimSpace(in.HookEventName) == "" {
+		return decodedHook{}, errInvalidHook
+	}
+	return decodedHook{eventName: in.HookEventName, sessionID: in.SessionID, prompt: in.Prompt, source: in.Source}, nil
 }
 
 // Deadline is how long a hook may delay its host event.
@@ -38,17 +61,23 @@ func Deadline(eventName string) time.Duration {
 	return DeadlineFor("", eventName)
 }
 
-// EventName returns the host event name, or empty when the payload is not a JSON object.
+// EventName returns the event name for the unnamed profile.
 func EventName(input []byte) string {
-	input = normalizeHookInput(input)
-	if len(input) == 0 || len(input) > MaxInput {
+	return EventNameFor("", input)
+}
+
+// EventNameFor returns the event name using that host profile's decoder.
+// An unknown host or a payload that profile cannot decode returns empty.
+func EventNameFor(hostName string, input []byte) string {
+	selected, ok := resolveProfile(hostName)
+	if !ok || selected.decode == nil {
 		return ""
 	}
-	var in hookInput
-	if json.Unmarshal(input, &in) != nil {
+	decoded, err := selected.decode(input)
+	if err != nil {
 		return ""
 	}
-	return in.HookEventName
+	return decoded.eventName
 }
 
 // Wait runs fn until it returns or the deadline elapses.
@@ -113,40 +142,39 @@ func runHook(ctx context.Context, dir, visibility string, selected profile, inpu
 	if ctx.Err() != nil {
 		return nil, "hook skipped: deadline", ""
 	}
-	input = normalizeHookInput(input)
-	if len(input) == 0 || len(input) > MaxInput {
+	if selected.decode == nil || selected.encode == nil {
 		return nil, "hook skipped: invalid input", ""
 	}
-	var in hookInput
-	if json.Unmarshal(input, &in) != nil || strings.TrimSpace(in.HookEventName) == "" {
+	decoded, err := selected.decode(input)
+	if err != nil {
 		return nil, "hook skipped: invalid input", ""
 	}
-	rule, found := selected.rule(in.HookEventName)
+	rule, found := selected.rule(decoded.eventName)
 	if !found {
-		return nil, "", in.HookEventName
+		return nil, "", decoded.eventName
 	}
 	kind, inject := rule.kind, rule.inject
 	switch visibility {
 	case "", "public", "team", "private":
 	default:
-		return nil, "hook skipped: invalid input", in.HookEventName
+		return nil, "hook skipped: invalid input", decoded.eventName
 	}
-	body := eventBody(kind, in)
+	body := eventBody(kind, decoded)
 	if ctx.Err() != nil {
-		return nil, "hook skipped: deadline", in.HookEventName
+		return nil, "hook skipped: deadline", decoded.eventName
 	}
 	store, err := bundle.Open(dir)
 	if err != nil {
-		return nil, "hook skipped: bundle unavailable", in.HookEventName
+		return nil, "hook skipped: bundle unavailable", decoded.eventName
 	}
-	id := eventID(kind, in.SessionID, body)
+	id := eventID(kind, decoded.sessionID, body)
 	record, err := json.Marshal(session.Request{
 		Version: session.ContractVersion,
 		Op:      "record",
 		Event:   &session.Event{ID: id, Kind: kind, Body: body},
 	})
 	if err != nil {
-		return nil, "hook skipped: request failed", in.HookEventName
+		return nil, "hook skipped: request failed", decoded.eventName
 	}
 	recorded := session.Handle(ctx, store, record)
 	note := ""
@@ -154,10 +182,10 @@ func runHook(ctx context.Context, dir, visibility string, selected profile, inpu
 		note = "hook record failed"
 	}
 	if ctx.Err() != nil {
-		return nil, "hook skipped: deadline", in.HookEventName
+		return nil, "hook skipped: deadline", decoded.eventName
 	}
 	if !inject {
-		return nil, note, in.HookEventName
+		return nil, note, decoded.eventName
 	}
 	prepareRequest := session.Request{
 		Version:    session.ContractVersion,
@@ -167,29 +195,29 @@ func runHook(ctx context.Context, dir, visibility string, selected profile, inpu
 		Visibility: visibility,
 	}
 	if kind == "prompt" {
-		prepareRequest.Prompt = in.Prompt
+		prepareRequest.Prompt = decoded.prompt
 	}
 	line, err := json.Marshal(prepareRequest)
 	if err != nil {
-		return nil, "hook skipped: request failed", in.HookEventName
+		return nil, "hook skipped: request failed", decoded.eventName
 	}
 	response := session.Handle(ctx, store, line)
 	if ctx.Err() != nil {
-		return nil, "hook skipped: deadline", in.HookEventName
+		return nil, "hook skipped: deadline", decoded.eventName
 	}
 	if !response.OK {
-		return nil, "hook skipped: request failed", in.HookEventName
+		return nil, "hook skipped: request failed", decoded.eventName
 	}
 	pack, ok := response.Result.(session.Pack)
 	if !ok {
-		return nil, "hook skipped: request failed", in.HookEventName
+		return nil, "hook skipped: request failed", decoded.eventName
 	}
 	rendered := session.Render(pack.Entries)
 	if rendered == "" {
-		return nil, note, in.HookEventName
+		return nil, note, decoded.eventName
 	}
 	if ctx.Err() != nil {
-		return nil, "hook skipped: deadline", in.HookEventName
+		return nil, "hook skipped: deadline", decoded.eventName
 	}
 	deliveryLine, err := json.Marshal(session.Request{
 		Version: session.ContractVersion,
@@ -210,23 +238,23 @@ func runHook(ctx context.Context, dir, visibility string, selected profile, inpu
 		}
 		note += "hook delivery failed"
 	}
-	stdout, err := injectionJSON(in.HookEventName, rendered)
+	stdout, err := selected.encode(decoded.eventName, rendered)
 	if err != nil {
-		return nil, "hook skipped: request failed", in.HookEventName
+		return nil, "hook skipped: request failed", decoded.eventName
 	}
-	return stdout, note, in.HookEventName
+	return stdout, note, decoded.eventName
 }
 
-func eventBody(kind string, in hookInput) string {
+func eventBody(kind string, in decodedHook) string {
 	switch kind {
 	case "prompt":
-		body := truncateBytes(sanitize(in.Prompt), maxEventBody)
+		body := truncateBytes(sanitize(in.prompt), maxEventBody)
 		if strings.TrimSpace(body) == "" {
 			return "prompt"
 		}
 		return body
 	case "session_start":
-		return sourceToken(in.Source)
+		return sourceToken(in.source)
 	case "compact":
 		return "compact"
 	case "stop":
