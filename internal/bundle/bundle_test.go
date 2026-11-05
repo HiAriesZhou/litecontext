@@ -731,3 +731,37 @@ func TestWriterHelper(t *testing.T) {
 	}
 	os.Exit(0)
 }
+
+func TestReadReleasesLockBeforeParsing(t *testing.T) {
+	source := t.TempDir()
+	writeFile(t, filepath.Join(source, "a.md"), "# Alpha\n\nfirst rule.\n")
+	b := newBundle(t)
+	if _, err := b.CollectMarkdown(context.Background(), source, "notes", testNow); err != nil {
+		t.Fatal(err)
+	}
+	b.mu.Lock()
+	b.cachedHash = ""
+	b.cachedCanonical = nil
+	b.mu.Unlock()
+	var lockErr error
+	b.afterReadLock = func() {
+		r, err := os.OpenRoot(b.Dir())
+		if err != nil {
+			lockErr = err
+			return
+		}
+		defer r.Close()
+		unlock, err := lockBundle(context.Background(), r)
+		if err != nil {
+			lockErr = err
+			return
+		}
+		unlock()
+	}
+	if _, err := b.Validate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if lockErr != nil {
+		t.Fatalf("read held the bundle lock while parsing: %v", lockErr)
+	}
+}
