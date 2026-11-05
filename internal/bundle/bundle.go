@@ -507,7 +507,7 @@ func atomicWrite(r *os.Root, name string, data []byte) error {
 		return err
 	}
 	defer d.Close()
-	return d.Sync()
+	return syncDirectory(d)
 }
 func saveSnapshot(r *os.Root, s snapshot, hook func(string) error) error {
 	data, err := encodeCanonical(s)
