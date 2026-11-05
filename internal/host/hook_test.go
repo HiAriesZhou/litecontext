@@ -119,6 +119,43 @@ func TestSessionStartAndStopDoNotInventAQuery(t *testing.T) {
 	}
 }
 
+func TestNaturalPromptDoesNotRequireEveryWord(t *testing.T) {
+	dir := fixtureBundle(t)
+	stdout, note := Hook(context.Background(), dir, "", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "sess-question",
+		"prompt":          "where is the shared rule?",
+	}))
+	if note != "" || !cited(stdout, "public.md") {
+		t.Fatalf("note=%q stdout=%s", note, stdout)
+	}
+}
+
+func TestChinesePromptMatchesAShortWindow(t *testing.T) {
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "deploy.md"), []byte("# 部署\n\n部署约束保持不变。\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "bundle")
+	if err := bundle.Init(dir); err != nil {
+		t.Fatal(err)
+	}
+	store, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.CollectMarkdown(context.Background(), source, "notes", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	stdout, note := Hook(context.Background(), dir, "", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "sess-zh",
+		"prompt":          "这个项目的部署约束是什么",
+	}))
+	if note != "" || !cited(stdout, "deploy.md") || !bytes.Contains(stdout, []byte("部署约束")) {
+		t.Fatalf("note=%q stdout=%s", note, stdout)
+	}
+}
 func TestUnknownAndFailedHooksStayQuiet(t *testing.T) {
 	dir := fixtureBundle(t)
 	stdout, note := Hook(context.Background(), dir, "", payload(t, map[string]any{"hook_event_name": "PostToolUse"}))

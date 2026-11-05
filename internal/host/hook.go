@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,9 +23,8 @@ const (
 	promptDeadline = 200 * time.Millisecond
 	otherDeadline  = time.Second
 	prepareBudget  = 2000
-	renderBudget   = 8000
+	maxSearchTerms = 4
 	maxEventBody   = 32 << 10
-	maxQueryBytes  = 4096
 	maxQueryTerms  = 64
 )
 
@@ -138,31 +138,18 @@ func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, st
 	if !inject {
 		return nil, note
 	}
-	query := ""
+	var terms []string
 	if kind == "prompt" {
-		query = queryFromPrompt(in.Prompt)
+		terms = selectTerms(in.Prompt)
 	}
-	if query == "" {
+	if len(terms) == 0 {
 		return nil, note
 	}
-	prepare, err := json.Marshal(session.Request{
-		Op: "prepare", Query: query, Budget: prepareBudget, Visibility: visibility,
-	})
-	if err != nil {
-		return nil, "hook skipped: request failed"
+	entries, searchNote := searchEntries(ctx, store, visibility, terms)
+	if searchNote != "" {
+		return nil, searchNote
 	}
-	prepared := session.Handle(ctx, store, prepare)
-	if ctx.Err() != nil {
-		return nil, "hook skipped: deadline"
-	}
-	if !prepared.OK {
-		return nil, "hook skipped: request failed"
-	}
-	pack, ok := prepared.Result.(session.Pack)
-	if !ok {
-		return nil, "hook skipped: request failed"
-	}
-	text := render(pack.Entries)
+	text := render(entries)
 	if text == "" {
 		return nil, note
 	}
@@ -225,28 +212,144 @@ func eventID(kind, sessionID, body string) string {
 	return "hook_" + hex.EncodeToString(sum[:])
 }
 
-func queryFromPrompt(prompt string) string {
-	prompt = truncateBytes(sanitize(prompt), maxQueryBytes)
-	fields := strings.Fields(norm.NFC.String(strings.ToLower(prompt)))
-	seen := map[string]bool{}
-	terms := make([]string, 0, maxQueryTerms)
-	used := 0
-	for _, term := range fields {
-		if seen[term] {
-			continue
-		}
-		extra := len(term)
-		if len(terms) > 0 {
-			extra++
-		}
-		if used+extra > maxQueryBytes || len(terms) == maxQueryTerms {
+func selectTerms(prompt string) []string {
+	prompt = norm.NFC.String(strings.ToLower(sanitize(prompt)))
+	var candidates []string
+	for _, field := range strings.Fields(prompt) {
+		if len(candidates) >= maxQueryTerms {
 			break
 		}
-		seen[term] = true
-		terms = append(terms, term)
-		used += extra
+		candidates = append(candidates, expandTerm(field)...)
 	}
-	return strings.Join(terms, " ")
+	if len(candidates) > maxQueryTerms {
+		candidates = candidates[:maxQueryTerms]
+	}
+	seen := map[string]bool{}
+	filtered := make([]string, 0, maxSearchTerms)
+	for _, term := range candidates {
+		if seen[term] || stopword(term) || utf8.RuneCountInString(term) < 2 {
+			continue
+		}
+		seen[term] = true
+		filtered = append(filtered, term)
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return utf8.RuneCountInString(filtered[i]) > utf8.RuneCountInString(filtered[j])
+	})
+	if len(filtered) > maxSearchTerms {
+		filtered = filtered[:maxSearchTerms]
+	}
+	return filtered
+}
+
+func expandTerm(field string) []string {
+	runes := []rune(field)
+	if len(runes) == 0 {
+		return nil
+	}
+	if !containsNonASCII(field) {
+		if len(runes) > 24 {
+			return []string{string(runes[:24])}
+		}
+		return []string{field}
+	}
+	if len(runes) <= 8 {
+		return []string{field}
+	}
+	const width = 4
+	const count = 4
+	maxStart := len(runes) - width
+	seen := map[string]bool{}
+	out := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		start := maxStart * i / (count - 1)
+		term := string(runes[start : start+width])
+		if !seen[term] {
+			seen[term] = true
+			out = append(out, term)
+		}
+	}
+	return out
+}
+
+func containsNonASCII(value string) bool {
+	for _, r := range value {
+		if r > 127 {
+			return true
+		}
+	}
+	return false
+}
+
+func stopword(term string) bool {
+	_, ok := map[string]bool{
+		"a": true, "an": true, "the": true, "to": true, "of": true, "and": true, "or": true,
+		"for": true, "in": true, "on": true, "with": true, "is": true, "are": true, "was": true,
+		"were": true, "be": true, "at": true, "from": true, "about": true, "into": true, "over": true,
+		"what": true, "how": true, "when": true, "why": true, "where": true, "this": true, "that": true,
+		"please": true, "me": true, "my": true, "do": true, "does": true, "did": true, "can": true,
+		"you": true, "we": true, "it": true,
+	}[term]
+	return ok
+}
+
+func searchEntries(ctx context.Context, store *bundle.Bundle, visibility string, terms []string) ([]session.Entry, string) {
+	type hit struct {
+		entry  session.Entry
+		score  int
+		itemID string
+	}
+	found := map[string]*hit{}
+	for _, term := range terms {
+		if ctx.Err() != nil {
+			return nil, "hook skipped: deadline"
+		}
+		line, err := json.Marshal(session.Request{Op: "search", Query: term, Limit: 5, Visibility: visibility})
+		if err != nil {
+			return nil, "hook skipped: request failed"
+		}
+		response := session.Handle(ctx, store, line)
+		if ctx.Err() != nil {
+			return nil, "hook skipped: deadline"
+		}
+		if !response.OK {
+			return nil, "hook skipped: request failed"
+		}
+		matches, ok := response.Result.([]bundle.Evidence)
+		if !ok {
+			return nil, "hook skipped: request failed"
+		}
+		for _, match := range matches {
+			key := match.Ref.SourceID + "\x00" + match.Ref.ItemID + "\x00" + match.Ref.RecordHash
+			if existing := found[key]; existing != nil {
+				existing.score++
+				continue
+			}
+			ref := session.Ref{
+				SourceID: match.Ref.SourceID, ItemID: match.Ref.ItemID, RecordHash: match.Ref.RecordHash,
+				StartLine: match.Ref.StartLine, EndLine: match.Ref.EndLine,
+			}
+			found[key] = &hit{
+				score: 1, itemID: match.Ref.ItemID,
+				entry: session.Entry{Role: "knowledge", Text: match.Text, Locator: match.Locator, Ref: &ref},
+			}
+		}
+	}
+	ordered := make([]*hit, 0, len(found))
+	for _, item := range found {
+		ordered = append(ordered, item)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].score != ordered[j].score {
+			return ordered[i].score > ordered[j].score
+		}
+		return ordered[i].itemID < ordered[j].itemID
+	})
+	entries := make([]session.Entry, len(ordered))
+	for i, item := range ordered {
+		entries[i] = item.entry
+	}
+	return entries, ""
 }
 
 func render(entries []session.Entry) string {
@@ -268,14 +371,14 @@ func render(entries []session.Entry) string {
 		block.WriteString(text)
 		blocks = append(blocks, block.String())
 	}
-	for len(blocks) > 0 && utf8.RuneCountInString(strings.Join(blocks, "\n\n")) > renderBudget {
+	for len(blocks) > 0 && utf8.RuneCountInString(strings.Join(blocks, "\n\n")) > prepareBudget {
 		blocks = blocks[:len(blocks)-1]
 	}
 	if len(blocks) == 0 {
 		return ""
 	}
 	rendered := strings.Join(blocks, "\n\n")
-	if utf8.RuneCountInString(rendered) > renderBudget {
+	if utf8.RuneCountInString(rendered) > prepareBudget {
 		return ""
 	}
 	return rendered
