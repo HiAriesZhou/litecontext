@@ -2,10 +2,26 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://litecontext.dev/contracts/session/v1/request.schema.json",
   "title": "LiteContext session request",
-  "description": "One newline-delimited request to lc serve. Version 1 is required.",
+  "description": "One newline-delimited request to lc serve. Version 1 is required. A non-empty prompt is valid only on prepare and cannot include a query or terms.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "op"],
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "required": ["prompt"],
+        "properties": { "prompt": { "type": "string", "minLength": 1 } }
+      },
+      "then": {
+        "properties": {
+          "op": { "const": "prepare" },
+          "query": { "const": "" },
+          "terms": { "type": "array", "maxItems": 0 }
+        }
+      }
+    }
+  ],
   "properties": {
     "version": { "const": 1 },
     "op": { "enum": ["record", "prepare", "search", "show", "deliver", "checkpoint", "memory", "inspect"] },
