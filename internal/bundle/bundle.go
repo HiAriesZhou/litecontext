@@ -130,7 +130,7 @@ func Open(dir string) (*Bundle, error) {
 }
 func (b *Bundle) access(ctx context.Context, write bool, fn func(*snapshot) error) error {
 	if !write {
-		return b.readSnapshot(ctx, fn)
+		return b.readSnapshot(ctx, func(_ string, s *snapshot) error { return fn(s) })
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -224,7 +224,7 @@ func (b *Bundle) access(ctx context.Context, write bool, fn func(*snapshot) erro
 	return nil
 }
 
-func (b *Bundle) readSnapshot(ctx context.Context, fn func(*snapshot) error) error {
+func (b *Bundle) readSnapshot(ctx context.Context, fn func(string, *snapshot) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -269,7 +269,7 @@ func (b *Bundle) readSnapshot(ctx context.Context, fn func(*snapshot) error) err
 		release()
 		locked = false
 		b.notifyReadUnlocked()
-		return fn(&cached)
+		return fn(hash, &cached)
 	}
 	data, err := readRegular(r, live, maximumSnapshotBytes)
 	if err != nil {
@@ -296,7 +296,7 @@ func (b *Bundle) readSnapshot(ctx context.Context, fn func(*snapshot) error) err
 		return err
 	}
 	b.storeSnapshot(hash, canonical, s, true)
-	return fn(&s)
+	return fn(hash, &s)
 }
 
 func (b *Bundle) notifyReadUnlocked() {
@@ -592,6 +592,33 @@ func cleanSnapshots(r *os.Root, live string) error {
 func validVisibility(v string, optional bool) bool {
 	return v == "private" || v == "team" || v == "public" || (optional && v == "")
 }
+func (b *Bundle) HeadHash(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	info, err := os.Lstat(b.dir)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("bundle must be a real directory")
+	}
+	r, err := os.OpenRoot(b.dir)
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+	if _, err = readManifest(r); err != nil {
+		return "", err
+	}
+	release, err := lockBundle(ctx, r)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+	return currentSnapshotHash(r)
+}
+
 func (b *Bundle) Validate(ctx context.Context) (uint64, error) {
 	var generation uint64
 	err := b.access(ctx, false, func(s *snapshot) error { generation = s.Generation; return nil })
