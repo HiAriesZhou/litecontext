@@ -82,7 +82,7 @@ The prototype checks one software project handed between Codex and Claude Code. 
 `lc inspect` prints the stored report. `lc view --bundle DIR --output FILE` writes one self-contained HTML file and exits. The file is not a service, has no write controls, and does not change memory. The writer creates a new file in the destination directory and renames it into place. It refuses a symlink or non-regular path. Replacing a hard-linked name leaves the original file unchanged, including when that file is inside the bundle. It has four sections:
 
 1. Sources, shown by id, name, type, active state, and update time, with the stored task and stored read failures. Connected hosts, selected files, and collection failure are unknown.
-2. Stored delivery text, selected and emitted counts, elapsed time when it was stored, and each stored omission role, locator, and reason. Acknowledgement, use, and the source version of each entry stay unknown. A delivery written without omissions still shows that reason as unknown.
+2. Stored delivery text, selected and emitted counts, elapsed time when it was stored, and each stored omission's role, locator, and reason. Acknowledgement, use, and the source version of each entry stay unknown. A delivery written without omissions still shows that reason as unknown.
 3. Each memory with its scope, visibility, and evidence. The next explicit session action is confirm for a candidate; correct, supersede, or revoke for an active memory; and none after it is superseded or revoked.
 4. Stored events. A name beginning with a dot, including the Windows event lock, is not an event. Replay and processing stage are unknown.
 
