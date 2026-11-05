@@ -228,7 +228,7 @@ func TestRejectCaseFoldedPaths(t *testing.T) {
 		"alpha": {Provenance: contextmodel.CanonicalProvenance{Locator: "docs/readme.md"}},
 		"beta":  {Provenance: contextmodel.CanonicalProvenance{Locator: "docs/readme.md"}},
 	}
-	if err = rejectCaseFoldedPaths(same); err == nil || strings.Contains(err.Error(), "differ only by case") || !strings.Contains(err.Error(), "docs/readme.md") {
+	if err = rejectCaseFoldedPaths(same); err == nil || strings.Contains(err.Error(), "differ only by case") || strings.Contains(err.Error(), "already current") || !strings.Contains(err.Error(), "docs/readme.md") {
 		t.Fatalf("same locator: %v", err)
 	}
 	samples := []string{"Note.md", "note.md", "NOTE.MD", "docs/Readme.md", "docs/readme.md", "commit/AbC", "commit/abc", "commit/abd", "ß.md", "ss.md"}
