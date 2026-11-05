@@ -104,7 +104,7 @@ func present(page Page) pageData {
 			EventID: delivery.EventID, Selected: delivery.Selected, Emitted: delivery.Emitted,
 			Elapsed: elapsed(delivery.ElapsedMs), Acknowledged: storedOrUnknown(delivery.Acknowledged),
 			Used: storedOrUnknown(delivery.Used), Omissions: omissionText(delivery.Omissions),
-			Entries: entryText(delivery.Entries), Text: delivery.Text,
+			Entries: entryText(delivery.Entries, delivery.EntriesTruncated), Text: delivery.Text,
 		})
 	}
 	for _, memory := range page.Report.Memories {
@@ -169,32 +169,34 @@ func nextAction(status string) string {
 	}
 }
 
-func entryText(entries *[]session.EmittedEntry) string {
+func entryText(entries *[]session.EmittedEntry, truncated *bool) string {
 	if entries == nil {
 		return "Source version unknown."
 	}
+	var text string
 	if len(*entries) == 0 {
-		return "No emitted sources."
-	}
-	parts := make([]string, 0, len(*entries))
-	for _, item := range *entries {
-		if item.Reason == "truncated" {
-			parts = append(parts, "entry list truncated")
-			continue
-		}
-		part := item.Role
-		if item.Ref != nil {
-			part += " " + item.Ref.SourceID + " " + item.Ref.ItemID
-			if item.Ref.RecordHash != "" {
-				part += " " + item.Ref.RecordHash
+		text = "No emitted sources."
+	} else {
+		parts := make([]string, 0, len(*entries))
+		for _, item := range *entries {
+			part := item.Role
+			if item.Ref != nil {
+				part += " " + item.Ref.SourceID + " " + item.Ref.ItemID
+				if item.Ref.RecordHash != "" {
+					part += " " + item.Ref.RecordHash
+				}
 			}
+			if item.Locator != "" {
+				part += " " + item.Locator
+			}
+			parts = append(parts, part)
 		}
-		if item.Locator != "" {
-			part += " " + item.Locator
-		}
-		parts = append(parts, part)
+		text = "Emitted: " + strings.Join(parts, "; ") + "."
 	}
-	return "Emitted: " + strings.Join(parts, "; ") + "."
+	if truncated != nil && *truncated {
+		text += " Entry list truncated."
+	}
+	return text
 }
 
 func omissionText(omissions *[]session.Omission) string {
