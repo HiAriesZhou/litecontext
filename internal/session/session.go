@@ -296,8 +296,14 @@ func record(ctx context.Context, bundleDir string, event Event) (bool, error) {
 	existing, err := events.Open(name)
 	if err == nil {
 		defer existing.Close()
-		stored, readErr := io.ReadAll(io.LimitReader(existing, maxEventBytes+1024))
-		if readErr != nil || !bytes.Equal(bytes.TrimSpace(stored), payload) {
+		// The stored file is the canonical JSON plus one newline. Escaping can
+		// make that larger than the raw body, so the read limit follows this
+		// payload. One extra byte distinguishes a longer file from a match.
+		expected := make([]byte, len(payload)+1)
+		copy(expected, payload)
+		expected[len(payload)] = '\n'
+		stored, readErr := io.ReadAll(io.LimitReader(existing, int64(len(expected))+1))
+		if readErr != nil || !bytes.Equal(stored, expected) {
 			return false, fmt.Errorf("event id already records different content")
 		}
 		return true, nil
