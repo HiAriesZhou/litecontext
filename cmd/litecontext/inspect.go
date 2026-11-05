@@ -22,10 +22,11 @@ func runInspect(arguments []string) error {
 	if strings.TrimSpace(*bundleDir) == "" || flags.NArg() != 0 {
 		return fmt.Errorf("usage: lc inspect --bundle DIR [--json]")
 	}
-	if _, err := bundle.Open(*bundleDir); err != nil {
+	opened, err := bundle.Open(*bundleDir)
+	if err != nil {
 		return err
 	}
-	report, err := session.Inspect(context.Background(), *bundleDir)
+	report, err := session.Inspect(context.Background(), opened)
 	if err != nil {
 		return err
 	}
@@ -38,6 +39,18 @@ func runInspect(arguments []string) error {
 
 func formatReport(report session.Report) string {
 	var buf strings.Builder
+	fmt.Fprintf(&buf, "Generation: %d\n", report.Generation)
+	buf.WriteString("Sources:\n")
+	if len(report.Sources) == 0 {
+		buf.WriteString("none\n")
+	}
+	for _, source := range report.Sources {
+		state := "inactive"
+		if source.Active {
+			state = "active"
+		}
+		fmt.Fprintf(&buf, "%s %s %s %s\n", source.ID, oneLine(source.Name), oneLine(source.Type), state)
+	}
 	if report.Task == nil {
 		buf.WriteString("Task: none\n")
 	} else {

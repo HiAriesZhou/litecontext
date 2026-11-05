@@ -569,7 +569,7 @@ func TestInspectSeparatesCurrentMemoryAndDelivery(t *testing.T) {
 	if !delivered.OK {
 		t.Fatalf("deliver: %+v", delivered)
 	}
-	report, err := Inspect(ctx, dir)
+	report, err := Inspect(ctx, b)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,6 +601,14 @@ func TestInspectSeparatesCurrentMemoryAndDelivery(t *testing.T) {
 	}
 	if len(report.Events) != 1 || report.Events[0].ID != "turn-inspect" || report.Events[0].Kind != "prompt" {
 		t.Fatalf("events: %+v", report.Events)
+	}
+	if report.Generation == 0 || report.Sources == nil {
+		t.Fatalf("catalog: %+v", report)
+	}
+	for _, failure := range report.Failures {
+		if failure == "sources unavailable" || failure == "snapshot changed" {
+			t.Fatalf("catalog failure: %s", failure)
+		}
 	}
 	response := Handle(ctx, b, []byte(`{"version":1,"op":"inspect"}`))
 	inspected, ok := response.Result.(Report)

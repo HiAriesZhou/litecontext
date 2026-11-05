@@ -217,7 +217,7 @@ func dispatch(ctx context.Context, b *bundle.Bundle, request Request) (any, bool
 		record, err := ApplyMemory(ctx, b.Dir(), *request.Memory)
 		return record, false, err
 	case "inspect":
-		report, err := Inspect(ctx, b.Dir())
+		report, err := Inspect(ctx, b)
 		return report, false, err
 	default:
 		return nil, false, fmt.Errorf("invalid request")

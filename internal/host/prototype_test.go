@@ -134,12 +134,15 @@ func TestPrototypeHandoffKeepsCurrentConstraints(t *testing.T) {
 			t.Fatalf("host received %q: %s", absent, received)
 		}
 	}
-	report, err := session.Inspect(ctx, dir)
+	report, err := session.Inspect(ctx, store)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(report.Deliveries) != 1 || report.Deliveries[0].Text != received || report.Deliveries[0].ElapsedMs == nil || *report.Deliveries[0].ElapsedMs < 0 {
 		t.Fatalf("delivery record: %+v", report.Deliveries)
+	}
+	if report.Generation == 0 || len(report.Sources) == 0 {
+		t.Fatalf("catalog: %+v generation %d", report.Sources, report.Generation)
 	}
 	encoded, err := json.Marshal(report)
 	if err != nil {
