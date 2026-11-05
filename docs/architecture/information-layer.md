@@ -52,7 +52,7 @@ One-shot preparation stays on the machine that holds the project files. It does 
 | --- | --- | --- |
 | Language | Go, no CGO | One native binary for macOS and Windows |
 | Storage | File bundle behind one storage interface | Keep the current authority while isolating platform locks |
-| Host boundary | JSON stdio, four operations | A client can integrate without linking the core |
+| Host boundary | JSON stdio, five operations | A client can integrate without linking the core |
 | Process | One-shot process per hook event; `lc serve` only when a client holds it | Command hooks cannot keep a warm process |
 | Retrieval | Literal search until a measured one-shot prepare misses the hook deadline | Do not add an index before that miss is observed |
 | Model use | Off the delivery path | Host hooks cannot wait for extraction |
