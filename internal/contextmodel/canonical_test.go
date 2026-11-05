@@ -208,3 +208,17 @@ func TestCanonicalContextItemRoundTripsSafeExtensionIntegerThroughJSON(t *testin
 		t.Fatal("fractional extension number unexpectedly validated")
 	}
 }
+
+func TestRelativeLocatorRejectsWindowsIncompatibleSegments(t *testing.T) {
+	rejected := []string{"readme.md.", "readme.md ", "docs/aux.md", "CON.txt", "folder/lpt1", "notes/file:name.md", "question?.md"}
+	for _, locator := range rejected {
+		if err := validateRelativeLocator(locator); err == nil {
+			t.Fatalf("accepted %q", locator)
+		}
+	}
+	for _, locator := range []string{"readme.md", "docs/guide.md", "commit/0123456789abcdef", "console.md", "com0.md"} {
+		if err := validateRelativeLocator(locator); err != nil {
+			t.Fatalf("%q: %v", locator, err)
+		}
+	}
+}
