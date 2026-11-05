@@ -578,7 +578,16 @@ func TestHookRecordsWhetherAnythingWasOmitted(t *testing.T) {
 	}
 	id := strings.TrimSuffix(entries[0].Name(), ".json")
 	stored, err := session.ReadEmission(dir, id)
-	if err != nil || stored.Omissions == nil {
-		t.Fatalf("omissions: %+v %v", stored.Omissions, err)
+	if err != nil || stored.Omissions == nil || stored.Entries == nil {
+		t.Fatalf("delivery: omissions=%+v entries=%+v err=%v", stored.Omissions, stored.Entries, err)
+	}
+	var found bool
+	for _, item := range *stored.Entries {
+		if item.Locator == "private.md" && item.Ref != nil && item.Ref.SourceID != "" && item.Ref.ItemID != "" && item.Ref.RecordHash != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("entries: %+v", *stored.Entries)
 	}
 }

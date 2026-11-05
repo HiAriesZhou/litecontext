@@ -77,13 +77,14 @@ type Event struct {
 // DeliveryInput is the injection a host is about to return.
 // Acknowledgement and use are accepted only as unknown.
 type DeliveryInput struct {
-	Text         string      `json:"text"`
-	Selected     int         `json:"selected"`
-	Emitted      int         `json:"emitted"`
-	Acknowledged string      `json:"acknowledged,omitempty" enum:"unknown"`
-	Used         string      `json:"used,omitempty" enum:"unknown"`
-	ElapsedMs    *int        `json:"elapsedMs,omitempty"`
-	Omissions    *[]Omission `json:"omissions,omitempty"`
+	Text         string          `json:"text"`
+	Selected     int             `json:"selected"`
+	Emitted      int             `json:"emitted"`
+	Acknowledged string          `json:"acknowledged,omitempty" enum:"unknown"`
+	Used         string          `json:"used,omitempty" enum:"unknown"`
+	ElapsedMs    *int            `json:"elapsedMs,omitempty"`
+	Omissions    *[]Omission     `json:"omissions,omitempty"`
+	Entries      *[]EmittedEntry `json:"entries,omitempty"`
 }
 
 type Response struct {
@@ -113,6 +114,15 @@ type Omission struct {
 	Ref     *Ref   `json:"ref,omitempty"`
 	Locator string `json:"locator,omitempty"`
 	Reason  string `json:"reason" enum:"budget,unavailable,truncated"`
+}
+
+// EmittedEntry is the identity of one entry returned to the host.
+// It does not repeat the rendered body. A truncation marker has role omission and reason truncated.
+type EmittedEntry struct {
+	Role    string `json:"role"`
+	Locator string `json:"locator,omitempty"`
+	Ref     *Ref   `json:"ref,omitempty"`
+	Reason  string `json:"reason,omitempty" enum:"truncated"`
 }
 
 type Delivery struct {

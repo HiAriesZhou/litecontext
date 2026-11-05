@@ -41,6 +41,7 @@ type deliveryRow struct {
 	Acknowledged string
 	Used         string
 	Omissions    string
+	Entries      string
 	Text         string
 }
 
@@ -102,7 +103,8 @@ func present(page Page) pageData {
 		data.Deliveries = append(data.Deliveries, deliveryRow{
 			EventID: delivery.EventID, Selected: delivery.Selected, Emitted: delivery.Emitted,
 			Elapsed: elapsed(delivery.ElapsedMs), Acknowledged: storedOrUnknown(delivery.Acknowledged),
-			Used: storedOrUnknown(delivery.Used), Omissions: omissionText(delivery.Omissions), Text: delivery.Text,
+			Used: storedOrUnknown(delivery.Used), Omissions: omissionText(delivery.Omissions),
+			Entries: entryText(delivery.Entries), Text: delivery.Text,
 		})
 	}
 	for _, memory := range page.Report.Memories {
@@ -167,6 +169,34 @@ func nextAction(status string) string {
 	}
 }
 
+func entryText(entries *[]session.EmittedEntry) string {
+	if entries == nil {
+		return "Source version unknown."
+	}
+	if len(*entries) == 0 {
+		return "No emitted sources."
+	}
+	parts := make([]string, 0, len(*entries))
+	for _, item := range *entries {
+		if item.Reason == "truncated" {
+			parts = append(parts, "entry list truncated")
+			continue
+		}
+		part := item.Role
+		if item.Ref != nil {
+			part += " " + item.Ref.SourceID + " " + item.Ref.ItemID
+			if item.Ref.RecordHash != "" {
+				part += " " + item.Ref.RecordHash
+			}
+		}
+		if item.Locator != "" {
+			part += " " + item.Locator
+		}
+		parts = append(parts, part)
+	}
+	return "Emitted: " + strings.Join(parts, "; ") + "."
+}
+
 func omissionText(omissions *[]session.Omission) string {
 	if omissions == nil {
 		return "Omission reason unknown."
@@ -221,7 +251,7 @@ nav a { color: #1c1915; margin-right: 1rem; }
 <body>
 <main>
 <h1>LiteContext</h1>
-<p class="meta">Generation {{.Generation}}. Connected hosts, selected files, collection failure, replay, processing stage, and per-entry source version are unknown.</p>
+<p class="meta">Generation {{.Generation}}. Connected hosts, selected files, collection failure, replay, and processing stage are unknown.</p>
 <nav>
 <a href="#sources">Sources</a>
 <a href="#deliveries">Deliveries</a>
@@ -246,7 +276,7 @@ nav a { color: #1c1915; margin-right: 1rem; }
 {{if .Deliveries}}{{range .Deliveries}}
 <article>
 <p>{{.EventID}} selected={{.Selected}} emitted={{.Emitted}} elapsed={{.Elapsed}}</p>
-<p class="meta">Acknowledged {{.Acknowledged}}. Used {{.Used}}. Source version unknown. {{.Omissions}}</p>
+<p class="meta">Acknowledged {{.Acknowledged}}. Used {{.Used}}. {{.Entries}} {{.Omissions}}</p>
 <pre>{{.Text}}</pre>
 </article>
 {{end}}{{else}}<p>none</p>{{end}}

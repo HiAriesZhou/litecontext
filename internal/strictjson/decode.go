@@ -93,6 +93,8 @@ func shape(v any, t reflect.Type) error {
 		return fmt.Errorf("null is not allowed in typed fields")
 	}
 	switch t.Kind() {
+	case reflect.Pointer:
+		return shape(v, t.Elem())
 	case reflect.Struct:
 		m, ok := v.(map[string]any)
 		if !ok {
