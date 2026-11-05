@@ -1,6 +1,6 @@
 # Information layer
 
-LiteContext is one local product and one repository. Knowledge, Memory, and Context are capability domains over a shared evidence foundation. They are not separate products. This page is the current target. The file-based evidence core described in [Architecture](overview.md) and the session stdio contract are implemented. Memory activation, host adapters, the viewer, and Windows storage are not. The evidence core currently runs on macOS and Linux.
+LiteContext is one local product and one repository. Knowledge, Memory, and Context are capability domains over a shared evidence foundation. They are not separate products. This page is the current target. The file-based evidence core described in [Architecture](overview.md) and the session stdio contract are implemented. Memory activation, host adapters, the viewer, and Windows storage are not. The evidence core currently runs on macOS and Linux. Windows lock code is included and compiles; it has not been executed on Windows.
 
 ## Capabilities
 
@@ -40,7 +40,7 @@ The host contract has four operations: record an event, prepare context, search 
 
 The normal process is session-scoped. The adapter starts it when the host session starts, sends repeated requests over stdio, and stops it when the session ends. A host that cannot hold a process uses the same binary for one request and then exits. There is no machine-wide daemon and no network listener.
 
-macOS is the first host target, using the existing file-lock implementation. Windows is the second and must be native. A Windows agent does not reliably share paths, hooks, and process state with WSL2, so WSL2 is not the product path. The Windows storage port needs `LockFileEx` for the bundle lock and an atomic replace for `HEAD`. Linux can keep the current lock implementation, but it is not a product target.
+macOS is the first host target, using the existing file-lock implementation. Windows is the second and must be native. A Windows agent does not reliably share paths, hooks, and process state with WSL2, so WSL2 is not the product path. The Windows build uses `LockFileEx` for the bundle lock and the event lock. Atomic replacement of `HEAD` uses the Go 1.26 `os.Root` rename, which replaces an existing file. This build compiles for `windows/amd64` and `windows/arm64`; acceptance still requires running it on Windows. Linux can keep the current lock implementation, but it is not a product target.
 
 The hot path stays on the machine that holds the project files. It does not call a model or use the network. An open bundle handle reuses its parsed snapshot until HEAD changes, including across repeated requests in one process. A different process sees the new snapshot on its next read. Literal search remains the retrieval method until a normal prepare exceeds the host hook budget. The budget is under one second for a warm session. Only then is a rebuildable index added. The index candidate is pure-Go SQLite, because a CGO SQLite build makes Windows compatibility worse. A vector database, reranker, and knowledge graph are not required for the first host integration.
 
