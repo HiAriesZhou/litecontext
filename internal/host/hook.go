@@ -138,21 +138,17 @@ func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, st
 	if !inject {
 		return nil, note
 	}
-	var terms []string
-	if kind == "prompt" {
-		terms = session.PromptTerms(in.Prompt)
-	}
-	if ctx.Err() != nil {
-		return nil, "hook skipped: deadline"
-	}
-	line, err := json.Marshal(session.Request{
+	prepareRequest := session.Request{
 		Version:    session.ContractVersion,
 		Op:         "prepare",
-		Terms:      terms,
 		Limit:      10,
 		Budget:     prepareBudget,
 		Visibility: visibility,
-	})
+	}
+	if kind == "prompt" {
+		prepareRequest.Prompt = in.Prompt
+	}
+	line, err := json.Marshal(prepareRequest)
 	if err != nil {
 		return nil, "hook skipped: request failed"
 	}
