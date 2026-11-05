@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -285,8 +286,8 @@ func (b *Bundle) readSnapshot(ctx context.Context, fn func(string, *snapshot) er
 		return fmt.Errorf("snapshot digest mismatch")
 	}
 	var s snapshot
-	if strictjson.Decode(data, &s) != nil {
-		return fmt.Errorf("invalid snapshot JSON")
+	if err = decodeSnapshot(data, &s); err != nil {
+		return err
 	}
 	if err = validateSnapshot(s, m); err != nil {
 		return fmt.Errorf("invalid snapshot records")
@@ -393,8 +394,8 @@ func loadSnapshot(r *os.Root, m Manifest) (snapshot, string, error) {
 	if digest(data) != h.Snapshot {
 		return s, "", fmt.Errorf("snapshot digest mismatch")
 	}
-	if strictjson.Decode(data, &s) != nil {
-		return s, "", fmt.Errorf("invalid snapshot JSON")
+	if err = decodeSnapshot(data, &s); err != nil {
+		return s, "", err
 	}
 	if err = validateSnapshot(s, m); err != nil {
 		return s, "", fmt.Errorf("invalid snapshot records")
@@ -402,6 +403,21 @@ func loadSnapshot(r *os.Root, m Manifest) (snapshot, string, error) {
 	return s, name, nil
 }
 
+func decodeSnapshot(data []byte, target *snapshot) error {
+	if err := rejectDuplicateKeys(data); err != nil {
+		return fmt.Errorf("invalid snapshot JSON")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return fmt.Errorf("invalid snapshot JSON")
+	}
+	var extra struct{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return fmt.Errorf("invalid snapshot JSON")
+	}
+	return nil
+}
 func validateSnapshot(s snapshot, m Manifest) error {
 	if s.ProjectID != m.ProjectID || s.Generation == 0 || s.Generation > maximumGeneration || s.Sources == nil || s.Items == nil {
 		return fmt.Errorf("invalid snapshot header")
