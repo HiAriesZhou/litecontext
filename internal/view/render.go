@@ -40,6 +40,7 @@ type deliveryRow struct {
 	Elapsed      string
 	Acknowledged string
 	Used         string
+	Omissions    string
 	Text         string
 }
 
@@ -101,7 +102,7 @@ func present(page Page) pageData {
 		data.Deliveries = append(data.Deliveries, deliveryRow{
 			EventID: delivery.EventID, Selected: delivery.Selected, Emitted: delivery.Emitted,
 			Elapsed: elapsed(delivery.ElapsedMs), Acknowledged: storedOrUnknown(delivery.Acknowledged),
-			Used: storedOrUnknown(delivery.Used), Text: delivery.Text,
+			Used: storedOrUnknown(delivery.Used), Omissions: omissionText(delivery.Omissions), Text: delivery.Text,
 		})
 	}
 	for _, memory := range page.Report.Memories {
@@ -166,6 +167,24 @@ func nextAction(status string) string {
 	}
 }
 
+func omissionText(omissions *[]session.Omission) string {
+	if omissions == nil {
+		return "Omission reason unknown."
+	}
+	if len(*omissions) == 0 {
+		return "Nothing omitted."
+	}
+	parts := make([]string, 0, len(*omissions))
+	for _, item := range *omissions {
+		part := item.Role + " " + item.Reason
+		if item.Locator != "" {
+			part += " " + item.Locator
+		}
+		parts = append(parts, part)
+	}
+	return "Omitted: " + strings.Join(parts, "; ") + "."
+}
+
 func elapsed(value *int) string {
 	if value == nil {
 		return "unknown"
@@ -202,7 +221,7 @@ nav a { color: #1c1915; margin-right: 1rem; }
 <body>
 <main>
 <h1>LiteContext</h1>
-<p class="meta">Generation {{.Generation}}. Connected hosts, selected files, collection failure, replay, processing stage, per-entry source version, and omission reason are unknown.</p>
+<p class="meta">Generation {{.Generation}}. Connected hosts, selected files, collection failure, replay, processing stage, and per-entry source version are unknown.</p>
 <nav>
 <a href="#sources">Sources</a>
 <a href="#deliveries">Deliveries</a>
@@ -227,7 +246,7 @@ nav a { color: #1c1915; margin-right: 1rem; }
 {{if .Deliveries}}{{range .Deliveries}}
 <article>
 <p>{{.EventID}} selected={{.Selected}} emitted={{.Emitted}} elapsed={{.Elapsed}}</p>
-<p class="meta">Acknowledged {{.Acknowledged}}. Used {{.Used}}. Source version unknown. Omission reason unknown.</p>
+<p class="meta">Acknowledged {{.Acknowledged}}. Used {{.Used}}. Source version unknown. {{.Omissions}}</p>
 <pre>{{.Text}}</pre>
 </article>
 {{end}}{{else}}<p>none</p>{{end}}

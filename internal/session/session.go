@@ -77,12 +77,13 @@ type Event struct {
 // DeliveryInput is the injection a host is about to return.
 // Acknowledgement and use are accepted only as unknown.
 type DeliveryInput struct {
-	Text         string `json:"text"`
-	Selected     int    `json:"selected"`
-	Emitted      int    `json:"emitted"`
-	Acknowledged string `json:"acknowledged,omitempty" enum:"unknown"`
-	Used         string `json:"used,omitempty" enum:"unknown"`
-	ElapsedMs    *int   `json:"elapsedMs,omitempty"`
+	Text         string      `json:"text"`
+	Selected     int         `json:"selected"`
+	Emitted      int         `json:"emitted"`
+	Acknowledged string      `json:"acknowledged,omitempty" enum:"unknown"`
+	Used         string      `json:"used,omitempty" enum:"unknown"`
+	ElapsedMs    *int        `json:"elapsedMs,omitempty"`
+	Omissions    *[]Omission `json:"omissions,omitempty"`
 }
 
 type Response struct {
@@ -108,9 +109,10 @@ type Entry struct {
 }
 
 type Omission struct {
-	Role   string `json:"role,omitempty"`
-	Ref    *Ref   `json:"ref,omitempty"`
-	Reason string `json:"reason"`
+	Role    string `json:"role,omitempty"`
+	Ref     *Ref   `json:"ref,omitempty"`
+	Locator string `json:"locator,omitempty"`
+	Reason  string `json:"reason" enum:"budget,unavailable,truncated"`
 }
 
 type Delivery struct {
@@ -306,7 +308,7 @@ func prepare(ctx context.Context, b *bundle.Bundle, request Request) (Pack, erro
 			continue
 		}
 		if used+cost > budget {
-			omissions = append(omissions, Omission{Role: candidate.Role, Ref: candidate.Ref, Reason: "budget"})
+			omissions = append(omissions, Omission{Role: candidate.Role, Ref: candidate.Ref, Locator: candidate.Locator, Reason: "budget"})
 			continue
 		}
 		pack.Entries = append(pack.Entries, candidate)
