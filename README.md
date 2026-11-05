@@ -42,7 +42,7 @@ The bundle destination must be absent or empty. Reuse the same source name to re
 - `contracts/context-model/v1/` — portable record schemas.
 - `contracts/bundle/v1/` — bundle manifest and snapshot schemas.
 - `docs/architecture/overview.md` — implemented storage and collection.
-- `docs/architecture/information-layer.md` — target capability boundaries; not implemented beyond the evidence core.
+- `docs/architecture/information-layer.md` — current boundaries for evidence, context, task checkpoints, and memory.
 
 For batch import, first allocate a source with `lc source add NAME --bundle DIR --json`, then pass the returned source ID to `lc import BATCH.json --source SOURCE_ID --bundle DIR --json`. Batches follow [ContextItemBatch v1](contracts/context-model/v1/context-item-batch.schema.json).
 
