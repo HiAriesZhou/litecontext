@@ -48,7 +48,7 @@ A user visibility override survives collection. `inherit` removes it. Historical
 
 ## Information boundaries
 
-Knowledge represents retrievable source material. Memory represents scoped durable conclusions with evidence and correction history. Task state represents temporary goals, progress and checks. Context selects information for a task. The target boundaries, technology choices, and prototype are in [Information layer](information-layer.md). `lc serve` and `lc host hook` are implemented. The hook asks `prepare` for the pack and only formats that pack for the host. Memory activation and task-state persistence are not implemented yet.
+Knowledge represents retrievable source material. Memory represents scoped durable conclusions with evidence and correction history. Task state represents temporary goals, progress and checks. Context selects information for a task. The target boundaries, technology choices, and prototype are in [Information layer](information-layer.md). `lc serve` and `lc host hook` are implemented. The hook asks `prepare` for the pack, records the rendered text with its selected and emitted counts, and formats that pack for the host. Memory activation and task-state persistence are not implemented yet.
 
 CLI, stdio MCP and host adapters must share one core. A management interface must not create a second authoritative store. Source content remains data, not executable instructions or authorization.
 

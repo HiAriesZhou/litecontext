@@ -174,7 +174,16 @@ func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, st
 	if ctx.Err() != nil {
 		return nil, "hook skipped: deadline"
 	}
-	if err = session.SaveEmission(ctx, dir, id, text); err != nil {
+	deliveryLine, err := json.Marshal(session.Request{
+		Op:      "deliver",
+		EventID: id,
+		Delivery: &session.DeliveryInput{
+			Text:     text,
+			Selected: pack.Delivery.Selected,
+			Emitted:  pack.Delivery.Emitted,
+		},
+	})
+	if err != nil || !session.Handle(ctx, store, deliveryLine).OK {
 		if note != "" {
 			note += "; "
 		}

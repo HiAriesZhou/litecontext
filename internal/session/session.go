@@ -29,21 +29,23 @@ const (
 )
 
 type Request struct {
-	Op         string   `json:"op" enum:"record,prepare,search,show"`
-	Query      string   `json:"query,omitempty"`
-	Terms      []string `json:"terms,omitempty"`
-	Limit      int      `json:"limit,omitempty"`
-	Budget     int      `json:"budget,omitempty"`
-	SourceID   string   `json:"sourceId,omitempty"`
-	ItemID     string   `json:"itemId,omitempty"`
-	RecordHash string   `json:"recordHash,omitempty"`
-	StartLine  int      `json:"startLine,omitempty"`
-	EndLine    int      `json:"endLine,omitempty"`
-	Visibility string   `json:"visibility,omitempty"`
-	Sources    []string `json:"sources,omitempty"`
-	Pins       []Ref    `json:"pins,omitempty"`
-	Task       *Task    `json:"task,omitempty"`
-	Event      *Event   `json:"event,omitempty"`
+	Op         string         `json:"op" enum:"record,prepare,search,show,deliver"`
+	Query      string         `json:"query,omitempty"`
+	Terms      []string       `json:"terms,omitempty"`
+	Limit      int            `json:"limit,omitempty"`
+	Budget     int            `json:"budget,omitempty"`
+	SourceID   string         `json:"sourceId,omitempty"`
+	ItemID     string         `json:"itemId,omitempty"`
+	RecordHash string         `json:"recordHash,omitempty"`
+	StartLine  int            `json:"startLine,omitempty"`
+	EndLine    int            `json:"endLine,omitempty"`
+	Visibility string         `json:"visibility,omitempty"`
+	Sources    []string       `json:"sources,omitempty"`
+	Pins       []Ref          `json:"pins,omitempty"`
+	Task       *Task          `json:"task,omitempty"`
+	Event      *Event         `json:"event,omitempty"`
+	EventID    string         `json:"eventId,omitempty"`
+	Delivery   *DeliveryInput `json:"delivery,omitempty"`
 }
 
 type Ref struct {
@@ -64,6 +66,16 @@ type Event struct {
 	ID   string `json:"id" nonempty:"true"`
 	Kind string `json:"kind" enum:"session_start,prompt,stop,compact,note"`
 	Body string `json:"body" nonempty:"true"`
+}
+
+// DeliveryInput is the injection a host is about to return.
+// Acknowledgement and use are accepted only as unknown.
+type DeliveryInput struct {
+	Text         string `json:"text"`
+	Selected     int    `json:"selected"`
+	Emitted      int    `json:"emitted"`
+	Acknowledged string `json:"acknowledged,omitempty" enum:"unknown"`
+	Used         string `json:"used,omitempty" enum:"unknown"`
 }
 
 type Response struct {
@@ -170,6 +182,12 @@ func dispatch(ctx context.Context, b *bundle.Bundle, request Request) (any, bool
 	case "prepare":
 		pack, err := prepare(ctx, b, request)
 		return pack, false, err
+	case "deliver":
+		if request.EventID == "" || request.Delivery == nil {
+			return nil, false, fmt.Errorf("invalid request")
+		}
+		err := SaveEmission(ctx, b.Dir(), request.EventID, *request.Delivery)
+		return nil, false, err
 	default:
 		return nil, false, fmt.Errorf("invalid request")
 	}

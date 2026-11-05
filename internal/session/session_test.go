@@ -253,20 +253,81 @@ func utf8RuneCount(value string) int {
 
 func TestSaveEmissionReplacesText(t *testing.T) {
 	dir := fixtureBundle(t)
-	if err := SaveEmission(context.Background(), dir, "turn-1", "first citation"); err != nil {
+	first := DeliveryInput{Text: "first citation", Selected: 1, Emitted: 1}
+	second := DeliveryInput{Text: "second citation", Selected: 2, Emitted: 1}
+	if err := SaveEmission(context.Background(), dir, "turn-1", first); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveEmission(context.Background(), dir, "turn-1", "second citation"); err != nil {
+	if err := SaveEmission(context.Background(), dir, "turn-1", second); err != nil {
 		t.Fatal(err)
 	}
 	got, err := ReadEmission(dir, "turn-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Emitted != "second citation" || got.Acknowledged != "unknown" || got.Used != "unknown" || got.EventID != "turn-1" {
+	if got.Text != "second citation" || got.Selected != 2 || got.Emitted != 1 || got.Acknowledged != "unknown" || got.Used != "unknown" || got.EventID != "turn-1" {
 		t.Fatalf("emission: %+v", got)
 	}
-	if err = SaveEmission(context.Background(), dir, "../x", "no"); err == nil {
+	if err = SaveEmission(context.Background(), dir, "../x", first); err == nil {
 		t.Fatal("accepted a path id")
+	}
+	if err = SaveEmission(context.Background(), dir, "turn-1", DeliveryInput{Text: "bad", Selected: 1, Emitted: 2}); err == nil {
+		t.Fatal("accepted emitted above selected")
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "events"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != "delivery" {
+			t.Fatalf("delivery created an event: %s", entry.Name())
+		}
+	}
+}
+
+func TestDeliverRecordsThroughTheSessionContract(t *testing.T) {
+	dir := fixtureBundle(t)
+	b, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := []byte(`{"op":"deliver","eventId":"turn-9","delivery":{"text":"cited line","selected":2,"emitted":1}}`)
+	got := Handle(context.Background(), b, line)
+	if !got.OK {
+		t.Fatalf("deliver: %+v", got)
+	}
+	stored, err := ReadEmission(dir, "turn-9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Text != "cited line" || stored.Selected != 2 || stored.Emitted != 1 || stored.Acknowledged != "unknown" || stored.Used != "unknown" || stored.EventID != "turn-9" {
+		t.Fatalf("stored: %+v", stored)
+	}
+	replaced := Handle(context.Background(), b, []byte(`{"op":"deliver","eventId":"turn-9","delivery":{"text":"later line","selected":2,"emitted":2}}`))
+	if !replaced.OK {
+		t.Fatalf("replace: %+v", replaced)
+	}
+	stored, err = ReadEmission(dir, "turn-9")
+	if err != nil || stored.Text != "later line" || stored.Emitted != 2 {
+		t.Fatalf("replaced: %+v %v", stored, err)
+	}
+	rejected := []string{
+		`{"op":"deliver","eventId":"../x","delivery":{"text":"x","selected":1,"emitted":1}}`,
+		`{"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":2}}`,
+		`{"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":1,"acknowledged":"yes"}}`,
+		`{"op":"deliver","delivery":{"text":"x","selected":1,"emitted":1}}`,
+	}
+	for _, raw := range rejected {
+		response := Handle(context.Background(), b, []byte(raw))
+		if response.OK {
+			t.Fatalf("accepted %s", raw)
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "events"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "delivery" {
+		t.Fatalf("events: %v", entries)
 	}
 }

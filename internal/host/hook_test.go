@@ -373,11 +373,13 @@ func TestInjectionRecordsTheRenderedContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stored struct {
-		Emitted      string `json:"emitted"`
+		Text         string `json:"text"`
+		Selected     int    `json:"selected"`
+		Emitted      int    `json:"emitted"`
 		Acknowledged string `json:"acknowledged"`
 		Used         string `json:"used"`
 	}
-	if json.Unmarshal(raw, &stored) != nil || stored.Emitted != out.HookSpecificOutput.AdditionalContext || strings.Contains(stored.Emitted, "DEVICE_CWD_SENTINEL") {
+	if json.Unmarshal(raw, &stored) != nil || stored.Text != out.HookSpecificOutput.AdditionalContext || stored.Emitted < 1 || stored.Selected < stored.Emitted || strings.Contains(stored.Text, "DEVICE_CWD_SENTINEL") {
 		t.Fatalf("delivery=%s", raw)
 	}
 	if stored.Acknowledged != "unknown" || stored.Used != "unknown" {
