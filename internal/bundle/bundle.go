@@ -291,11 +291,9 @@ func (b *Bundle) readSnapshot(ctx context.Context, fn func(string, *snapshot) er
 	if err = validateSnapshot(s, m); err != nil {
 		return fmt.Errorf("invalid snapshot records")
 	}
-	canonical, err := encodeCanonical(s)
-	if err != nil {
-		return err
-	}
-	b.storeSnapshot(hash, canonical, s, true)
+	// The committed file is already canonical JSON. Caching those bytes avoids
+	// serializing the snapshot again on every cold open.
+	b.storeSnapshot(hash, data, s, true)
 	return fn(hash, &s)
 }
 
@@ -403,6 +401,7 @@ func loadSnapshot(r *os.Root, m Manifest) (snapshot, string, error) {
 	}
 	return s, name, nil
 }
+
 func validateSnapshot(s snapshot, m Manifest) error {
 	if s.ProjectID != m.ProjectID || s.Generation == 0 || s.Generation > maximumGeneration || s.Sources == nil || s.Items == nil {
 		return fmt.Errorf("invalid snapshot header")
