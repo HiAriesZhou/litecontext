@@ -266,6 +266,22 @@ func TestHostHookCommandInjectsACitation(t *testing.T) {
 	if strings.Contains(body, "DEVICE_CWD_SENTINEL") || !strings.Contains(body, "shared rule") {
 		t.Fatalf("stored event: %s", body)
 	}
+	deliveryEntries, err := os.ReadDir(filepath.Join(dir, "events", "delivery"))
+	if err != nil || len(deliveryEntries) != 1 {
+		t.Fatalf("delivery entries: %v %v", err, deliveryEntries)
+	}
+	deliveryRaw, err := os.ReadFile(filepath.Join(dir, "events", "delivery", deliveryEntries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var delivery struct {
+		Text     string `json:"text"`
+		Selected int    `json:"selected"`
+		Emitted  int    `json:"emitted"`
+	}
+	if json.Unmarshal(deliveryRaw, &delivery) != nil || !strings.Contains(delivery.Text, "public.md#L") || delivery.Emitted < 1 || delivery.Selected < delivery.Emitted || strings.Contains(delivery.Text, "DEVICE_CWD_SENTINEL") {
+		t.Fatalf("delivery: %s", deliveryRaw)
+	}
 }
 
 func withStdin(t *testing.T, payload string, operation func() error) string {

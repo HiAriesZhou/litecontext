@@ -10,34 +10,42 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/HiAriesZhou/litecontext/internal/strictjson"
 )
 
 const maxEmissionBytes = 64 << 10
 
-// Emission is the context text a host injection actually returned.
-// Acknowledgement and use stay unknown until a host can prove them.
+// Emission is the delivery record for one host injection.
+// Emitted is the number of entries returned. Text is the rendered context.
 type Emission struct {
 	EventID      string `json:"eventId"`
-	Emitted      string `json:"emitted"`
+	Text         string `json:"text"`
+	Selected     int    `json:"selected"`
+	Emitted      int    `json:"emitted"`
 	Acknowledged string `json:"acknowledged"`
 	Used         string `json:"used"`
 }
 
-// SaveEmission records the text returned to the host for one event.
-// A later injection with the same event ID replaces the previous text.
+// SaveEmission records the injection returned to the host for one event.
+// A later delivery with the same event ID replaces the previous record.
 // The file is events/delivery/<eventID>.json, separate from the event record.
-func SaveEmission(ctx context.Context, bundleDir, eventID, emitted string) error {
+func SaveEmission(ctx context.Context, bundleDir, eventID string, input DeliveryInput) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	if !validID(eventID) || emitted == "" {
+	if !validID(eventID) || input.Text == "" || input.Selected < 0 || input.Emitted < 0 || input.Emitted > input.Selected {
 		return fmt.Errorf("invalid delivery")
 	}
-	if err := plainText(emitted, maxEmissionBytes); err != nil {
+	if (input.Acknowledged != "" && input.Acknowledged != "unknown") || (input.Used != "" && input.Used != "unknown") {
+		return fmt.Errorf("invalid delivery")
+	}
+	if err := plainText(input.Text, maxEmissionBytes); err != nil {
 		return fmt.Errorf("invalid delivery")
 	}
 	payload, err := canonicalEmission(Emission{
-		EventID: eventID, Emitted: emitted, Acknowledged: "unknown", Used: "unknown",
+		EventID: eventID, Text: input.Text, Selected: input.Selected, Emitted: input.Emitted,
+		Acknowledged: "unknown", Used: "unknown",
 	})
 	if err != nil {
 		return fmt.Errorf("invalid delivery")
@@ -127,8 +135,11 @@ func ReadEmission(bundleDir, eventID string) (Emission, error) {
 		return Emission{}, err
 	}
 	var emission Emission
-	if err = json.Unmarshal(bytes.TrimSpace(data), &emission); err != nil {
-		return Emission{}, err
+	if err = strictjson.Decode(bytes.TrimSpace(data), &emission); err != nil {
+		return Emission{}, fmt.Errorf("invalid delivery")
+	}
+	if emission.EventID != eventID || emission.Text == "" || emission.Selected < 0 || emission.Emitted < 0 || emission.Emitted > emission.Selected || emission.Acknowledged != "unknown" || emission.Used != "unknown" {
+		return Emission{}, fmt.Errorf("invalid delivery")
 	}
 	return emission, nil
 }
