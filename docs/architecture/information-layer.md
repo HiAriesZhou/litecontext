@@ -1,6 +1,6 @@
 # Information layer
 
-LiteContext is one local product and one repository. Knowledge, Memory, and Context are capability domains over a shared evidence foundation. They are not separate products. This page is the current target. The file-based evidence core described in [Architecture](overview.md), the session stdio contract, and `lc host hook` are implemented. The hook command does not install or edit host configuration. Memory activation, the viewer, and Windows runtime verification are not. The evidence core currently runs on macOS and Linux. Windows lock code is included and compiles; it has not been executed on Windows.
+LiteContext is one local product and one repository. Knowledge, Memory, and Context are capability domains over a shared evidence foundation. They are not separate products. This page is the current target. The file-based evidence core described in [Architecture](overview.md), the session stdio contract, task checkpoints, and `lc host hook` are implemented. The hook command does not install or edit host configuration. Memory activation, the viewer, and Windows runtime verification are not. The evidence core currently runs on macOS and Linux. Windows lock code is included and compiles; it has not been executed on Windows.
 
 ## Capabilities
 
@@ -17,7 +17,7 @@ The default delivery is small: current constraints, task progress, and an index 
 
 ## Session contract
 
-`lc serve --bundle DIR` reads one JSON object per line and writes one JSON object per line. `--once` handles a single request. The operations are `search`, `show`, `record`, `prepare`, and `deliver`. `record` stores an event under the bundle's local `events` directory and does not add evidence. A repeated event ID with the same content is a replay; the same ID with different content is rejected. `prepare` selects task text, pinned evidence, and search hits without calling a model. A prepared entry includes the evidence locator when it has one. Entries that do not fit the rune budget are omitted whole. Unavailable pins are omitted without their text. `deliver` stores the rendered `text` and the `selected` and `emitted` entry counts under `events/delivery/<eventID>.json`. The same event ID replaces that record. Acknowledgement and use stay `unknown`.
+`lc serve --bundle DIR` reads one JSON object per line and writes one JSON object per line. `--once` handles a single request. The operations are `search`, `show`, `record`, `prepare`, and `deliver`. `record` stores an event under the bundle's local `events` directory and does not add evidence. A repeated event ID with the same content is a replay; the same ID with different content is rejected. `prepare` selects task text, pinned evidence, and search hits without calling a model. A prepared entry includes the evidence locator when it has one. Entries that do not fit the rune budget are omitted whole. Unavailable pins are omitted without their text. `deliver` stores the rendered `text` and the `selected` and `emitted` entry counts under `events/delivery/<eventID>.json`. The same event ID replaces that record. Acknowledgement and use stay `unknown`. `checkpoint` replaces the current task: goal, progress, checks, blockers, and the next step. An empty task removes it. `prepare` uses the stored task when the request omits `task`; an explicit task applies only to that preparation and does not change the stored one. A checkpoint that cannot be read is omitted. It is not evidence and it is not memory.
 
 ## Modules
 
@@ -34,7 +34,7 @@ A new agent client adapts the host. It does not receive a copy of retrieval, mem
 
 Knowledge remains the evidence core's retrieval view. The viewer and CLI call the same runtime. Neither keeps a second copy of the records.
 
-The host contract has five operations: record an event, prepare context, search current evidence, show an exact version, and record the injected text with its selected and emitted counts. Session start, prompt submission, stop, and compaction are host details mapped onto those operations. An adapter can be written in the host's own language because the contract is JSON over stdio, not a Go API.
+The host contract has six operations: record an event, prepare context, search current evidence, show an exact version, record the injected text with its selected and emitted counts, and replace the current task checkpoint. Session start, prompt submission, stop, and compaction are host details mapped onto those operations. An adapter can be written in the host's own language because the contract is JSON over stdio, not a Go API.
 
 ## Runtime and platforms
 
@@ -52,7 +52,7 @@ One-shot preparation stays on the machine that holds the project files. It does 
 | --- | --- | --- |
 | Language | Go, no CGO | One native binary for macOS and Windows |
 | Storage | File bundle behind one storage interface | Keep the current authority while isolating platform locks |
-| Host boundary | JSON stdio, five operations | A client can integrate without linking the core |
+| Host boundary | JSON stdio, six operations | A client can integrate without linking the core |
 | Process | One-shot process per hook event; `lc serve` only when a client holds it | Command hooks cannot keep a warm process |
 | Retrieval | Literal search until a measured one-shot prepare misses the hook deadline | Do not add an index before that miss is observed |
 | Model use | Off the delivery path | Host hooks cannot wait for extraction |
@@ -69,7 +69,7 @@ The current snapshot limit of 64 MiB is for a bounded evidence collection. Conti
 
 The event body is the prompt, or a short source token such as `startup`. `cwd` and `transcript_path` are not stored. The event ID is `hook_` plus the SHA-256 of the kind, session ID, and body. The same payload replays; a different body is a different event.
 
-A prompt contributes at most four distinctive terms. Common English question words are left out. The selected terms are searched in one pass, and an item matches when it contains any of them. A long uninterrupted string, including Chinese text, is sampled as short windows. Term selection, retrieval, citation lines, and the rune budget belong to `prepare`. The hook records the event and wraps the rendered pack; it does not search on its own. When it injects text, it calls `deliver` with that rendered `text` and the pack's `selected` and `emitted` counts. The record is `events/delivery/<eventID>.json`. Acknowledgement and use stay unknown. A failure to record delivery still returns the injection. Events without a prompt are recorded and do not invent a query. Injection is written for `UserPromptSubmit` when at least one rendered entry fits. The injected text is that rendered pack, at most 2000 Unicode code points. The JSON contains `hookSpecificOutput.hookEventName` and `hookSpecificOutput.additionalContext`. The text cites a relative locator and line. It is not an instruction. By default the owner's private records are eligible. `--visibility public|team|private` is an explicit filter, not model authorization.
+A prompt contributes at most four distinctive terms. Common English question words are left out. The selected terms are searched in one pass, and an item matches when it contains any of them. A long uninterrupted string, including Chinese text, is sampled as short windows. Term selection, retrieval, citation lines, the rune budget, and the stored task belong to `prepare`. The hook records the event and wraps the rendered pack; it does not search or save a task on its own. When the hook does not send a task, `prepare` includes the stored checkpoint. When it injects text, it calls `deliver` with that rendered `text` and the pack's `selected` and `emitted` counts. The record is `events/delivery/<eventID>.json`. Acknowledgement and use stay unknown. A failure to record delivery still returns the injection. Events without a prompt are recorded and do not invent a query. Injection is written for `UserPromptSubmit` when at least one rendered entry fits. The injected text is that rendered pack, at most 2000 Unicode code points. The JSON contains `hookSpecificOutput.hookEventName` and `hookSpecificOutput.additionalContext`. The text cites a relative locator and line. It is not an instruction. By default the owner's private records are eligible. `--visibility public|team|private` is an explicit filter, not model authorization.
 
 The process exits 0 with empty stdout when input, the bundle, or the deadline fails. A prompt waits at most 200ms. Any other known event waits at most 1 second. Exit 1 is reserved for a malformed command. Windows hook behavior has not been run on Windows.
 
@@ -88,4 +88,4 @@ The viewer has four pages:
 
 The prototype is accepted only when the record matches what the host received, required constraints are present, superseded decisions are not presented as current, and the added time stays visible. The macOS path is accepted before the Windows adapter. Windows acceptance includes a native lock, an atomic bundle commit, and the same stdio contract. Knowledge must work without Memory. Memory must accept a cited conclusion without a complete knowledge base. Context must allow either supplier to be replaced.
 
-The stdio contract, deterministic assembly, and the one-shot hook adapter are in place. Windows runtime acceptance is still required. Model extraction and an extra index come after a measured one-shot prepare misses the hook deadline.
+The stdio contract, deterministic assembly, task checkpoints, and the one-shot hook adapter are in place. Windows runtime acceptance is still required. Model extraction and an extra index come after a measured one-shot prepare misses the hook deadline.

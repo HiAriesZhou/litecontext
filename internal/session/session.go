@@ -29,7 +29,7 @@ const (
 )
 
 type Request struct {
-	Op         string         `json:"op" enum:"record,prepare,search,show,deliver"`
+	Op         string         `json:"op" enum:"record,prepare,search,show,deliver,checkpoint"`
 	Query      string         `json:"query,omitempty"`
 	Terms      []string       `json:"terms,omitempty"`
 	Limit      int            `json:"limit,omitempty"`
@@ -59,6 +59,8 @@ type Ref struct {
 type Task struct {
 	Goal     string `json:"goal,omitempty"`
 	Progress string `json:"progress,omitempty"`
+	Checks   string `json:"checks,omitempty"`
+	Blockers string `json:"blockers,omitempty"`
 	Next     string `json:"next,omitempty"`
 }
 
@@ -188,6 +190,14 @@ func dispatch(ctx context.Context, b *bundle.Bundle, request Request) (any, bool
 		}
 		err := SaveEmission(ctx, b.Dir(), request.EventID, *request.Delivery)
 		return nil, false, err
+	case "checkpoint":
+		if request.Task == nil {
+			return nil, false, fmt.Errorf("invalid request")
+		}
+		if err := SaveTask(ctx, b.Dir(), *request.Task); err != nil {
+			return nil, false, err
+		}
+		return *request.Task, false, nil
 	default:
 		return nil, false, fmt.Errorf("invalid request")
 	}
@@ -201,20 +211,15 @@ func prepare(ctx context.Context, b *bundle.Bundle, request Request) (Pack, erro
 	if budget < 1 || budget > maxBudget || len(request.Pins) > maxPins {
 		return Pack{}, fmt.Errorf("invalid request")
 	}
-	if request.Task != nil {
-		for _, value := range []string{request.Task.Goal, request.Task.Progress, request.Task.Next} {
-			if err := plainText(value, 2000); err != nil {
-				return Pack{}, err
-			}
-		}
+	task, taskUnavailable, err := taskForPrepare(ctx, b.Dir(), request.Task)
+	if err != nil {
+		return Pack{}, err
 	}
 	pack := Pack{Entries: []Entry{}, Omissions: []Omission{}, Delivery: Delivery{Acknowledged: "unknown", Used: "unknown"}}
 	var candidates []Entry
 	var omissions []Omission
-	if request.Task != nil {
-		if text := taskText(*request.Task); text != "" {
-			candidates = append(candidates, Entry{Role: "task", Text: text})
-		}
+	if text := taskText(task); text != "" {
+		candidates = append(candidates, Entry{Role: "task", Text: text})
 	}
 	seen := map[string]bool{}
 	for _, pin := range request.Pins {
@@ -243,7 +248,6 @@ func prepare(ctx context.Context, b *bundle.Bundle, request Request) (Pack, erro
 		return Pack{}, fmt.Errorf("invalid request")
 	}
 	var hits []bundle.Evidence
-	var err error
 	switch {
 	case strings.TrimSpace(request.Query) != "":
 		hits, err = b.Search(ctx, request.Query, scope(request), limit(request.Limit, 10, 20))
@@ -275,6 +279,9 @@ func prepare(ctx context.Context, b *bundle.Bundle, request Request) (Pack, erro
 		pack.Entries = append(pack.Entries, candidate)
 		pack.Delivery.Emitted++
 		used += cost
+	}
+	if taskUnavailable {
+		omissions = append(omissions, Omission{Role: "task", Reason: "unavailable"})
 	}
 	pack.Delivery.Selected = len(candidates) + unavailable(omissions)
 	pack.Omissions = omissions
@@ -438,6 +445,12 @@ func taskText(task Task) string {
 	}
 	if task.Progress != "" {
 		lines = append(lines, "Progress: "+task.Progress)
+	}
+	if task.Checks != "" {
+		lines = append(lines, "Checks: "+task.Checks)
+	}
+	if task.Blockers != "" {
+		lines = append(lines, "Blockers: "+task.Blockers)
 	}
 	if task.Next != "" {
 		lines = append(lines, "Next: "+task.Next)

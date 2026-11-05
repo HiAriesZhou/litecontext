@@ -284,6 +284,37 @@ func TestHostHookCommandInjectsACitation(t *testing.T) {
 	}
 }
 
+func TestServeCheckpointFeedsTheNextPrepare(t *testing.T) {
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "note.md"), []byte("# Rule\n\nPortable rule.\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "bundle")
+	captureStdout(t, func() error { return run([]string{"bundle", "init", dir, "--json"}) })
+	captureStdout(t, func() error {
+		return run([]string{"collect", "markdown", source, "--bundle", dir, "--name", "notes", "--json"})
+	})
+	saved := withStdin(t, "{\"op\":\"checkpoint\",\"task\":{\"goal\":\"Ship the checkpoint\",\"next\":\"Review the pack\"}}\n", func() error {
+		return run([]string{"serve", "--bundle", dir, "--once"})
+	})
+	if !strings.Contains(saved, `"ok":true`) {
+		t.Fatalf("checkpoint: %s", saved)
+	}
+	prepared := withStdin(t, "{\"op\":\"prepare\",\"query\":\"Portable rule\",\"budget\":2000}\n", func() error {
+		return run([]string{"serve", "--bundle", dir, "--once"})
+	})
+	if !strings.Contains(prepared, "Goal: Ship the checkpoint") || !strings.Contains(prepared, "Next: Review the pack") || !strings.Contains(prepared, `"locator":"note.md"`) {
+		t.Fatalf("prepare: %s", prepared)
+	}
+	found := captureStdout(t, func() error {
+		return run([]string{"search", "Ship the checkpoint", "--bundle", dir, "--json"})
+	})
+	var hits []any
+	if json.Unmarshal([]byte(found), &hits) != nil || len(hits) != 0 {
+		t.Fatalf("task became evidence: %s", found)
+	}
+}
+
 func withStdin(t *testing.T, payload string, operation func() error) string {
 	t.Helper()
 	reader, writer, err := os.Pipe()
