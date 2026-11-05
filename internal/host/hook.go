@@ -117,9 +117,10 @@ func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, st
 	if err != nil {
 		return nil, "hook skipped: bundle unavailable"
 	}
+	id := eventID(kind, in.SessionID, body)
 	record, err := json.Marshal(session.Request{
 		Op:    "record",
-		Event: &session.Event{ID: eventID(kind, in.SessionID, body), Kind: kind, Body: body},
+		Event: &session.Event{ID: id, Kind: kind, Body: body},
 	})
 	if err != nil {
 		return nil, "hook skipped: request failed"
@@ -169,6 +170,15 @@ func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, st
 	text := session.Render(pack.Entries)
 	if text == "" {
 		return nil, note
+	}
+	if ctx.Err() != nil {
+		return nil, "hook skipped: deadline"
+	}
+	if err = session.SaveEmission(ctx, dir, id, text); err != nil {
+		if note != "" {
+			note += "; "
+		}
+		note += "hook delivery failed"
 	}
 	stdout, err := injectionJSON(in.HookEventName, text)
 	if err != nil {

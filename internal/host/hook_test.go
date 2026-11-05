@@ -275,7 +275,7 @@ func eventText(t *testing.T, dir string) string {
 	}
 	var buf strings.Builder
 	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), "hook_") || !strings.HasSuffix(entry.Name(), ".json") {
+		if !strings.HasPrefix(entry.Name(), "hook_") || !strings.HasSuffix(entry.Name(), ".json") || strings.HasSuffix(entry.Name(), ".emission.json") {
 			continue
 		}
 		raw, err := os.ReadFile(filepath.Join(dir, "events", entry.Name()))
@@ -299,7 +299,7 @@ func eventCount(t *testing.T, dir string) int {
 	}
 	count := 0
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "hook_") && strings.HasSuffix(entry.Name(), ".json") {
+		if strings.HasPrefix(entry.Name(), "hook_") && strings.HasSuffix(entry.Name(), ".json") && !strings.HasSuffix(entry.Name(), ".emission.json") {
 			count++
 		}
 	}
@@ -342,5 +342,90 @@ func TestPromptInjectionMatchesPrepare(t *testing.T) {
 	}
 	if json.Unmarshal(stdout, &out) != nil || out.HookSpecificOutput.AdditionalContext != session.Render(pack.Entries) {
 		t.Fatalf("hook=%s render=%q", stdout, session.Render(pack.Entries))
+	}
+}
+
+func TestInjectionRecordsTheRenderedContext(t *testing.T) {
+	dir := fixtureBundle(t)
+	stdout, note := Hook(context.Background(), dir, "", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "sess-delivery",
+		"cwd":             "DEVICE_CWD_SENTINEL",
+		"prompt":          "secret constraint",
+	}))
+	if note != "" || !cited(stdout, "private.md") {
+		t.Fatalf("note=%q stdout=%s", note, stdout)
+	}
+	var out struct {
+		HookSpecificOutput struct {
+			AdditionalContext string `json:"additionalContext"`
+		} `json:"hookSpecificOutput"`
+	}
+	if json.Unmarshal(stdout, &out) != nil {
+		t.Fatalf("stdout=%s", stdout)
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "events", "delivery"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("delivery entries: %v %v", err, entries)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "events", "delivery", entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored struct {
+		Emitted      string `json:"emitted"`
+		Acknowledged string `json:"acknowledged"`
+		Used         string `json:"used"`
+	}
+	if json.Unmarshal(raw, &stored) != nil || stored.Emitted != out.HookSpecificOutput.AdditionalContext || strings.Contains(stored.Emitted, "DEVICE_CWD_SENTINEL") {
+		t.Fatalf("delivery=%s", raw)
+	}
+	if stored.Acknowledged != "unknown" || stored.Used != "unknown" {
+		t.Fatalf("delivery=%s", raw)
+	}
+	if eventCount(t, dir) != 1 {
+		t.Fatalf("delivery counted as an event: %d", eventCount(t, dir))
+	}
+	again, note := Hook(context.Background(), dir, "", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "sess-delivery",
+		"prompt":          "secret constraint",
+	}))
+	if note != "" || !bytes.Equal(stdout, again) || eventCount(t, dir) != 1 {
+		t.Fatalf("replay note=%q count=%d", note, eventCount(t, dir))
+	}
+}
+
+func TestNoMatchWritesNoDelivery(t *testing.T) {
+	dir := fixtureBundle(t)
+	stdout, note := Hook(context.Background(), dir, "public", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "sess-none",
+		"prompt":          "secret constraint",
+	}))
+	if stdout != nil || strings.Contains(note, "delivery") {
+		t.Fatalf("note=%q stdout=%s", note, stdout)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "events", "delivery")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected delivery: %v", err)
+	}
+}
+
+func TestDeliveryFailureStillInjects(t *testing.T) {
+	dir := fixtureBundle(t)
+	events := filepath.Join(dir, "events")
+	if err := os.Mkdir(events, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(events, "delivery"), []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	stdout, note := Hook(context.Background(), dir, "", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "sess-fail",
+		"prompt":          "secret constraint",
+	}))
+	if note != "hook delivery failed" || !cited(stdout, "private.md") {
+		t.Fatalf("note=%q stdout=%s", note, stdout)
 	}
 }
