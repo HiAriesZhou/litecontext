@@ -591,3 +591,80 @@ func TestHookRecordsWhetherAnythingWasOmitted(t *testing.T) {
 		t.Fatalf("entries: %+v", *stored.Entries)
 	}
 }
+
+func TestBeforeAgentInjectsCitedContextAndStoresEntries(t *testing.T) {
+	dir := fixtureBundle(t)
+	stdout, note := Hook(context.Background(), dir, "", payload(t, map[string]any{
+		"hook_event_name": "BeforeAgent",
+		"session_id":      "gemini-1",
+		"cwd":             "DEVICE_CWD_SENTINEL",
+		"transcript_path": "DEVICE_TRANSCRIPT_SENTINEL",
+		"prompt":          "secret constraint",
+	}))
+	if note != "" {
+		t.Fatalf("note=%q stdout=%s", note, stdout)
+	}
+	var out struct {
+		HookSpecificOutput struct {
+			HookEventName     string `json:"hookEventName"`
+			AdditionalContext string `json:"additionalContext"`
+		} `json:"hookSpecificOutput"`
+	}
+	if json.Unmarshal(stdout, &out) != nil || out.HookSpecificOutput.HookEventName != "BeforeAgent" {
+		t.Fatalf("stdout=%s", stdout)
+	}
+	if !strings.Contains(out.HookSpecificOutput.AdditionalContext, "private.md#L") || !strings.Contains(out.HookSpecificOutput.AdditionalContext, "secret constraint") {
+		t.Fatalf("context=%q", out.HookSpecificOutput.AdditionalContext)
+	}
+	storedEvent := eventText(t, dir)
+	if !strings.Contains(storedEvent, `"kind":"prompt"`) || !strings.Contains(storedEvent, "secret constraint") || strings.Contains(storedEvent, "DEVICE_") || strings.Contains(string(stdout), "DEVICE_") {
+		t.Fatalf("event=%s stdout=%s", storedEvent, stdout)
+	}
+	names, err := os.ReadDir(filepath.Join(dir, "events", "delivery"))
+	if err != nil || len(names) != 1 {
+		t.Fatalf("delivery entries: %v %v", err, names)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "events", "delivery", names[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored struct {
+		Acknowledged string                  `json:"acknowledged"`
+		Used         string                  `json:"used"`
+		Entries      *[]session.EmittedEntry `json:"entries"`
+	}
+	if json.Unmarshal(raw, &stored) != nil || stored.Acknowledged != "unknown" || stored.Used != "unknown" || stored.Entries == nil {
+		t.Fatalf("delivery=%s", raw)
+	}
+	var matched bool
+	for _, item := range *stored.Entries {
+		if item.Role != "knowledge" || item.Locator != "private.md" || item.Ref == nil {
+			continue
+		}
+		if item.Ref.SourceID == "" || item.Ref.ItemID == "" || !strings.HasPrefix(item.Ref.RecordHash, "sha256:") || item.Ref.StartLine < 1 || item.Ref.EndLine < item.Ref.StartLine {
+			t.Fatalf("entry=%+v ref=%+v", item, item.Ref)
+		}
+		matched = true
+	}
+	if !matched {
+		t.Fatalf("delivery=%s", raw)
+	}
+}
+
+func TestOtherGeminiEventsStayIgnored(t *testing.T) {
+	dir := fixtureBundle(t)
+	for _, name := range []string{"AfterAgent", "PreCompress", "BeforeModel"} {
+		stdout, note := Hook(context.Background(), dir, "", payload(t, map[string]any{
+			"hook_event_name": name,
+			"session_id":      "gemini-ignore",
+			"cwd":             "DEVICE_CWD_SENTINEL",
+			"prompt":          "secret constraint",
+		}))
+		if stdout != nil || note != "" {
+			t.Fatalf("%s note=%q stdout=%s", name, note, stdout)
+		}
+	}
+	if eventCount(t, dir) != 0 || strings.Contains(eventText(t, dir), "DEVICE_") {
+		t.Fatalf("ignored events stored: %s", eventText(t, dir))
+	}
+}

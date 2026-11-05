@@ -35,7 +35,7 @@ type hookInput struct {
 // Deadline is how long a hook may delay its host event.
 // A user prompt gets the shorter limit. Other events get one second.
 func Deadline(eventName string) time.Duration {
-	if eventName == "UserPromptSubmit" {
+	if eventName == "UserPromptSubmit" || eventName == "BeforeAgent" {
 		return promptDeadline
 	}
 	return otherDeadline
@@ -200,7 +200,7 @@ func mapEvent(name string) (kind string, inject bool) {
 	switch name {
 	case "SessionStart":
 		return "session_start", true
-	case "UserPromptSubmit":
+	case "UserPromptSubmit", "BeforeAgent":
 		return "prompt", true
 	case "PreCompact":
 		return "compact", false
