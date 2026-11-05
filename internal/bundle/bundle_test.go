@@ -826,3 +826,20 @@ func TestCommittedSnapshotBytesAreCanonical(t *testing.T) {
 		t.Fatalf("committed snapshot is not canonical: file %d canonical %d", len(raw), len(canonical))
 	}
 }
+
+func TestCollectMarkdownRejectsWindowsReservedName(t *testing.T) {
+	b := newBundle(t)
+	source := t.TempDir()
+	writeFile(t, filepath.Join(source, "keep.md"), "# Keep\n")
+	if _, err := b.CollectMarkdown(context.Background(), source, "notes", testNow); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, b.Dir())
+	writeFile(t, filepath.Join(source, "con.md"), "# Device\n")
+	if _, err := b.CollectMarkdown(context.Background(), source, "notes", testNow.Add(time.Hour)); err == nil {
+		t.Fatal("accepted a Windows reserved device name")
+	}
+	if !equalTrees(before, snapshotTree(t, b.Dir())) {
+		t.Fatal("reserved name partially committed")
+	}
+}
