@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litecontext.dev/contracts/session/v1/evidence.schema.json",
+  "title": "LiteContext evidence",
+  "description": "One exact source version returned by search or show. Search returns an array of these objects, including an empty array when nothing matches. Show returns one object. The ref includes the record hash and line range.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ref", "title", "locator", "format", "text", "visibility", "historical", "truncated"],
+  "properties": {
+    "ref": { "$ref": "#/$defs/ref" },
+    "title": { "type": "string" },
+    "locator": { "type": "string" },
+    "format": { "type": "string" },
+    "text": { "type": "string" },
+    "visibility": { "type": "string" },
+    "historical": { "type": "boolean" },
+    "truncated": { "type": "boolean" }
+  },
+  "$defs": {
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "itemId", "recordHash", "startLine", "endLine"],
+      "properties": {
+        "sourceId": { "type": "string" },
+        "itemId": { "type": "string" },
+        "recordHash": { "type": "string" },
+        "startLine": { "type": "integer" },
+        "endLine": { "type": "integer" }
+      }
+    }
+  }
+}
