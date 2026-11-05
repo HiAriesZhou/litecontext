@@ -721,3 +721,17 @@ func TestBeforeAgentFailureStaysSilentWithoutHostFlag(t *testing.T) {
 		t.Fatalf("note=%q stdout=%s", note, stdout)
 	}
 }
+
+func TestHookAcceptsUTF8BOMAndCRLF(t *testing.T) {
+	dir := fixtureBundle(t)
+	body := []byte("{\r\n  \"hook_event_name\": \"UserPromptSubmit\",\r\n  \"session_id\": \"crlf\",\r\n  \"prompt\": \"secret constraint\"\r\n}\r\n")
+	stdout, note := Hook(context.Background(), dir, "", append([]byte{0xEF, 0xBB, 0xBF}, body...))
+	if note != "" || !cited(stdout, "private.md") {
+		t.Fatalf("note=%q stdout=%s", note, stdout)
+	}
+	utf16 := []byte{0xFF, 0xFE, '{', 0x00}
+	stdout, note = Hook(context.Background(), dir, "", utf16)
+	if stdout != nil || note != "hook skipped: invalid input" {
+		t.Fatalf("utf16 note=%q stdout=%s", note, stdout)
+	}
+}
