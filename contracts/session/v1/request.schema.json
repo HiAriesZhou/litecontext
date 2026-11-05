@@ -90,7 +90,8 @@
         "used": { "enum": ["unknown"] },
         "elapsedMs": { "type": "integer" },
         "omissions": { "type": "array", "items": { "$ref": "#/$defs/omission" } },
-        "entries": { "type": "array", "items": { "$ref": "#/$defs/emittedEntry" } }
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/emittedEntry" } },
+        "entriesTruncated": { "type": "boolean" }
       }
     },
     "omission": {
@@ -111,8 +112,7 @@
       "properties": {
         "role": { "type": "string" },
         "locator": { "type": "string" },
-        "ref": { "$ref": "#/$defs/ref" },
-        "reason": { "enum": ["truncated"] }
+        "ref": { "$ref": "#/$defs/ref" }
       }
     },
     "memoryChange": {

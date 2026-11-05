@@ -20,15 +20,16 @@ const maxEmissionBytes = 64 << 10
 // Emission is the delivery record for one host injection.
 // Emitted is the number of entries returned. Text is the rendered context.
 type Emission struct {
-	EventID      string          `json:"eventId"`
-	Text         string          `json:"text"`
-	Selected     int             `json:"selected"`
-	Emitted      int             `json:"emitted"`
-	Acknowledged string          `json:"acknowledged" enum:"unknown"`
-	Used         string          `json:"used" enum:"unknown"`
-	ElapsedMs    *int            `json:"elapsedMs,omitempty"`
-	Omissions    *[]Omission     `json:"omissions,omitempty"`
-	Entries      *[]EmittedEntry `json:"entries,omitempty"`
+	EventID          string          `json:"eventId"`
+	Text             string          `json:"text"`
+	Selected         int             `json:"selected"`
+	Emitted          int             `json:"emitted"`
+	Acknowledged     string          `json:"acknowledged" enum:"unknown"`
+	Used             string          `json:"used" enum:"unknown"`
+	ElapsedMs        *int            `json:"elapsedMs,omitempty"`
+	Omissions        *[]Omission     `json:"omissions,omitempty"`
+	Entries          *[]EmittedEntry `json:"entries,omitempty"`
+	EntriesTruncated *bool           `json:"entriesTruncated,omitempty"`
 }
 
 // SaveEmission records the injection returned to the host for one event.
@@ -51,7 +52,7 @@ func SaveEmission(ctx context.Context, bundleDir, eventID string, input Delivery
 	if err != nil {
 		return err
 	}
-	entries, err := storedEntries(input.Entries)
+	entries, truncated, err := storedEntries(input.Entries, input.EntriesTruncated)
 	if err != nil {
 		return err
 	}
@@ -60,7 +61,8 @@ func SaveEmission(ctx context.Context, bundleDir, eventID string, input Delivery
 	}
 	_, payload, err := fitEmission(Emission{
 		EventID: eventID, Text: input.Text, Selected: input.Selected, Emitted: input.Emitted,
-		Acknowledged: "unknown", Used: "unknown", ElapsedMs: input.ElapsedMs, Omissions: omissions, Entries: entries,
+		Acknowledged: "unknown", Used: "unknown", ElapsedMs: input.ElapsedMs,
+		Omissions: omissions, Entries: entries, EntriesTruncated: truncated,
 	})
 	if err != nil {
 		return err
@@ -139,33 +141,35 @@ func validOmission(item Omission) error {
 const maxStoredEntries = 100
 const maxEmissionFileBytes = maxEmissionBytes + 4096
 
-func storedEntries(input *[]EmittedEntry) (*[]EmittedEntry, error) {
+func storedEntries(input *[]EmittedEntry, truncated *bool) (*[]EmittedEntry, *bool, error) {
+	if truncated != nil && !*truncated {
+		truncated = nil
+	}
 	if input == nil {
-		return nil, nil
+		if truncated != nil {
+			return nil, nil, fmt.Errorf("invalid delivery")
+		}
+		return nil, nil, nil
 	}
 	for _, item := range *input {
 		if err := validEmittedEntry(item); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	list := make([]EmittedEntry, 0, len(*input))
 	list = append(list, (*input)...)
 	if len(list) > maxStoredEntries {
-		list = append(list[:maxStoredEntries], EmittedEntry{Role: "omission", Reason: "truncated"})
+		list = list[:maxStoredEntries]
+		truncated = boolPtr(true)
 	}
-	return &list, nil
+	return &list, truncated, nil
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 func validEmittedEntry(item EmittedEntry) error {
-	if item.Reason == "truncated" {
-		if item.Role != "omission" || item.Locator != "" || item.Ref != nil {
-			return fmt.Errorf("invalid delivery")
-		}
-		return nil
-	}
-	if item.Reason != "" {
-		return fmt.Errorf("invalid delivery")
-	}
 	switch item.Role {
 	case "task", "memory", "pin", "knowledge":
 	default:
@@ -211,47 +215,40 @@ func validDeliveryRef(ref *Ref) error {
 }
 
 // fitEmission keeps the delivery file inside the read limit.
-// Entry identities are shortened before the delivery itself is rejected.
-// A shortened list keeps a truncation marker. When not even that marker fits,
-// the field is left absent and later reads as unknown.
+// A list that does not fit keeps a shorter prefix and entriesTruncated.
+// When no identity fits, the stored list is empty and still marked truncated.
+// A missing entries field remains reserved for records that never had one.
 func fitEmission(emission Emission) (Emission, []byte, error) {
-	try := func(entries *[]EmittedEntry) ([]byte, bool, error) {
-		emission.Entries = entries
-		payload, err := canonicalEmission(emission)
-		if err != nil {
-			return nil, false, fmt.Errorf("invalid delivery")
-		}
-		return payload, fitsEmission(payload), nil
-	}
-	payload, ok, err := try(emission.Entries)
+	payload, err := canonicalEmission(emission)
 	if err != nil {
-		return Emission{}, nil, err
-	}
-	if ok {
-		return emission, payload, nil
-	}
-	if emission.Entries == nil || len(*emission.Entries) == 0 {
 		return Emission{}, nil, fmt.Errorf("invalid delivery")
 	}
-	kept := make([]EmittedEntry, 0, len(*emission.Entries))
-	for _, item := range *emission.Entries {
-		if item.Reason != "truncated" {
-			kept = append(kept, item)
-		}
+	if fitsEmission(payload) {
+		return emission, payload, nil
 	}
-	for dropped := 1; dropped <= len(kept); dropped++ {
-		base := append([]EmittedEntry(nil), kept[:len(kept)-dropped]...)
-		trial := append(base, EmittedEntry{Role: "omission", Reason: "truncated"})
-		payload, ok, err = try(&trial)
+	if emission.Entries == nil {
+		return Emission{}, nil, fmt.Errorf("invalid delivery")
+	}
+	entries := append([]EmittedEntry(nil), (*emission.Entries)...)
+	truncated := true
+	for len(entries) > 0 {
+		entries = entries[:len(entries)-1]
+		trial := append([]EmittedEntry(nil), entries...)
+		emission.Entries = &trial
+		emission.EntriesTruncated = &truncated
+		payload, err = canonicalEmission(emission)
 		if err != nil {
-			return Emission{}, nil, err
+			return Emission{}, nil, fmt.Errorf("invalid delivery")
 		}
-		if ok {
+		if fitsEmission(payload) {
 			return emission, payload, nil
 		}
 	}
-	payload, ok, err = try(nil)
-	if err != nil || !ok {
+	empty := []EmittedEntry{}
+	emission.Entries = &empty
+	emission.EntriesTruncated = &truncated
+	payload, err = canonicalEmission(emission)
+	if err != nil || !fitsEmission(payload) {
 		return Emission{}, nil, fmt.Errorf("invalid delivery")
 	}
 	return emission, payload, nil
@@ -320,7 +317,7 @@ func ReadEmission(bundleDir, eventID string) (Emission, error) {
 		return Emission{}, err
 	}
 	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxEmissionBytes+4096))
+	data, err := io.ReadAll(io.LimitReader(file, maxEmissionFileBytes))
 	if err != nil {
 		return Emission{}, err
 	}
@@ -337,6 +334,9 @@ func ReadEmission(bundleDir, eventID string) (Emission, error) {
 				return Emission{}, err
 			}
 		}
+	}
+	if emission.Entries == nil && emission.EntriesTruncated != nil {
+		return Emission{}, fmt.Errorf("invalid delivery")
 	}
 	if emission.Entries != nil {
 		for _, item := range *emission.Entries {
