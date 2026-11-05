@@ -253,51 +253,6 @@ func CanonicalItemID(sourceID, externalID string) string {
 	return "itm_" + hex.EncodeToString(digest[:])
 }
 
-func (item CanonicalContextItem) ComputedContentHash() string {
-	return canonicalHash(struct {
-		Format  string `json:"format"`
-		Title   string `json:"title"`
-		Body    string `json:"body"`
-		Summary string `json:"summary,omitempty"`
-	}{norm.NFC.String(item.Content.Format), norm.NFC.String(item.Content.Title), norm.NFC.String(item.Content.Body), norm.NFC.String(item.Content.Summary)})
-}
-
-func (item CanonicalContextItem) ComputedRecordHash() string {
-	// Record hashes identify portable content, not runtime observation or local
-	// persistence state. In particular observedAt, revisions, and recordHash
-	// itself must never influence this digest.
-	payload := struct {
-		SchemaVersion string             `json:"schemaVersion"`
-		ID            string             `json:"id"`
-		Source        CanonicalSourceRef `json:"source"`
-		Content       Content            `json:"content"`
-		Provenance    struct {
-			SourceURI   string `json:"sourceURI,omitempty"`
-			Locator     string `json:"locator,omitempty"`
-			CreatedAt   string `json:"createdAt,omitempty" nonempty:"true"`
-			UpdatedAt   string `json:"updatedAt,omitempty" nonempty:"true"`
-			ContentHash string `json:"contentHash"`
-		} `json:"provenance"`
-		Attributes CanonicalAttributes `json:"attributes,omitempty"`
-		Extensions map[string]any      `json:"extensions,omitempty"`
-	}{
-		SchemaVersion: item.SchemaVersion,
-		ID:            item.ID,
-		Source:        item.Source,
-		Content:       item.Content,
-		Provenance: struct {
-			SourceURI   string `json:"sourceURI,omitempty"`
-			Locator     string `json:"locator,omitempty"`
-			CreatedAt   string `json:"createdAt,omitempty" nonempty:"true"`
-			UpdatedAt   string `json:"updatedAt,omitempty" nonempty:"true"`
-			ContentHash string `json:"contentHash"`
-		}{item.Provenance.SourceURI, item.Provenance.Locator, item.Provenance.CreatedAt, item.Provenance.UpdatedAt, item.Provenance.ContentHash},
-		Attributes: item.Attributes,
-		Extensions: item.Extensions,
-	}
-	return canonicalHash(payload)
-}
-
 func canonicalHash(value any) string {
 	digest, _ := CanonicalDigest(value)
 	return digest
