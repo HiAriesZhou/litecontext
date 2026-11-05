@@ -160,26 +160,30 @@ func clearTask(ctx context.Context, bundleDir string) error {
 }
 
 func openTaskDir(ctx context.Context, bundleDir string) (*os.Root, func(), error) {
+	return openChildDir(ctx, bundleDir, "task")
+}
+
+func openChildDir(ctx context.Context, bundleDir, name string) (*os.Root, func(), error) {
 	root, err := os.OpenRoot(bundleDir)
 	if err != nil {
 		return nil, nil, err
 	}
-	info, err := root.Lstat("task")
+	info, err := root.Lstat(name)
 	if errors.Is(err, os.ErrNotExist) {
-		if err = root.Mkdir("task", 0700); err != nil && !errors.Is(err, os.ErrExist) {
+		if err = root.Mkdir(name, 0700); err != nil && !errors.Is(err, os.ErrExist) {
 			root.Close()
 			return nil, nil, err
 		}
 	} else if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		root.Close()
-		return nil, nil, fmt.Errorf("task storage failed")
+		return nil, nil, fmt.Errorf("storage failed")
 	}
-	dir, err := root.OpenRoot("task")
+	dir, err := root.OpenRoot(name)
 	if err != nil {
 		root.Close()
 		return nil, nil, err
 	}
-	release, err := lockDirectory(ctx, filepath.Join(bundleDir, "task"))
+	release, err := lockDirectory(ctx, filepath.Join(bundleDir, name))
 	if err != nil {
 		dir.Close()
 		root.Close()

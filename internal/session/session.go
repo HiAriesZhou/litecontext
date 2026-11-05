@@ -29,7 +29,7 @@ const (
 )
 
 type Request struct {
-	Op         string         `json:"op" enum:"record,prepare,search,show,deliver,checkpoint"`
+	Op         string         `json:"op" enum:"record,prepare,search,show,deliver,checkpoint,memory"`
 	Query      string         `json:"query,omitempty"`
 	Terms      []string       `json:"terms,omitempty"`
 	Limit      int            `json:"limit,omitempty"`
@@ -46,6 +46,7 @@ type Request struct {
 	Event      *Event         `json:"event,omitempty"`
 	EventID    string         `json:"eventId,omitempty"`
 	Delivery   *DeliveryInput `json:"delivery,omitempty"`
+	Memory     *MemoryChange  `json:"memory,omitempty"`
 }
 
 type Ref struct {
@@ -198,6 +199,12 @@ func dispatch(ctx context.Context, b *bundle.Bundle, request Request) (any, bool
 			return nil, false, err
 		}
 		return *request.Task, false, nil
+	case "memory":
+		if request.Memory == nil {
+			return nil, false, fmt.Errorf("invalid request")
+		}
+		record, err := ApplyMemory(ctx, b.Dir(), *request.Memory)
+		return record, false, err
 	default:
 		return nil, false, fmt.Errorf("invalid request")
 	}
@@ -221,6 +228,12 @@ func prepare(ctx context.Context, b *bundle.Bundle, request Request) (Pack, erro
 	if text := taskText(task); text != "" {
 		candidates = append(candidates, Entry{Role: "task", Text: text})
 	}
+	memories, memoryOmissions, err := memoriesForPrepare(ctx, b.Dir(), request.Visibility)
+	if err != nil {
+		return Pack{}, err
+	}
+	candidates = append(candidates, memories...)
+	omissions = append(omissions, memoryOmissions...)
 	seen := map[string]bool{}
 	for _, pin := range request.Pins {
 		ref := pin

@@ -508,3 +508,53 @@ func TestSessionStartInjectsStoredTaskWithoutSearching(t *testing.T) {
 		t.Fatalf("prompt note=%q stdout=%s", note, stdout)
 	}
 }
+
+func TestHookInjectsConfirmedMemoryOnly(t *testing.T) {
+	dir := fixtureBundle(t)
+	store, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := "sha256:" + strings.Repeat("ab", 32)
+	line, err := json.Marshal(session.Request{Op: "memory", Memory: &session.MemoryChange{
+		Action: "propose", ID: "use-local", Text: "Do not use the remote API", Scope: "project",
+		Evidence: []session.Ref{{SourceID: "src_missing", ItemID: "itm_decision", RecordHash: hash}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved := session.Handle(context.Background(), store, line); !saved.OK {
+		t.Fatalf("propose: %+v", saved)
+	}
+	stdout, note := Hook(context.Background(), dir, "", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "sess-memory",
+		"prompt":          "secret constraint",
+	}))
+	if note != "" || bytes.Contains(stdout, []byte("remote API")) || !cited(stdout, "private.md") {
+		t.Fatalf("candidate note=%q stdout=%s", note, stdout)
+	}
+	confirm, err := json.Marshal(session.Request{Op: "memory", Memory: &session.MemoryChange{Action: "confirm", ID: "use-local"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved := session.Handle(context.Background(), store, confirm); !saved.OK {
+		t.Fatalf("confirm: %+v", saved)
+	}
+	stdout, note = Hook(context.Background(), dir, "", payload(t, map[string]any{
+		"hook_event_name": "SessionStart",
+		"session_id":      "sess-memory",
+		"source":          "startup",
+	}))
+	if note != "" || !bytes.Contains(stdout, []byte("Do not use the remote API")) || !bytes.Contains(stdout, []byte("src_missing/itm_decision")) || bytes.Contains(stdout, []byte("secret")) {
+		t.Fatalf("start note=%q stdout=%s", note, stdout)
+	}
+	stdout, note = Hook(context.Background(), dir, "public", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "sess-memory",
+		"prompt":          "shared rule",
+	}))
+	if note != "" || bytes.Contains(stdout, []byte("remote API")) || !cited(stdout, "public.md") {
+		t.Fatalf("public note=%q stdout=%s", note, stdout)
+	}
+}
