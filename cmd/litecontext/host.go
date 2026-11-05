@@ -10,6 +10,10 @@ import (
 	"github.com/HiAriesZhou/litecontext/internal/host"
 )
 
+// hookDeadline is the budget for one command invocation.
+// Tests replace it because a shared CI machine can miss the host budget without a broken hook.
+var hookDeadline = host.DeadlineFor
+
 func runHost(arguments []string) error {
 	if len(arguments) == 0 || arguments[0] != "hook" {
 		return fmt.Errorf("usage: lc host hook --bundle DIR [--host codex|claude|gemini] [--visibility public|team|private]")
@@ -37,14 +41,15 @@ func runHost(arguments []string) error {
 		}
 		return nil
 	}
-	stdout, stderr, timedOut := host.Wait(context.Background(), host.DeadlineFor(*hostName, host.EventName(raw)), func(ctx context.Context) ([]byte, string) {
+	stdout, stderr, timedOut := host.Wait(context.Background(), hookDeadline(*hostName, host.EventName(raw)), func(ctx context.Context) ([]byte, string) {
 		return host.HookFor(ctx, *dir, *visibility, *hostName, raw)
 	})
 	if timedOut {
 		if host.Diagnostic(*hostName, host.EventName(raw)) {
 			fmt.Fprintln(os.Stderr, "lc: hook skipped: deadline")
 		}
-		os.Exit(0)
+		// main exits 0 after this return, which stops the timed-out hook.
+		return nil
 	}
 	if stderr != "" {
 		fmt.Fprintln(os.Stderr, "lc: "+stderr)

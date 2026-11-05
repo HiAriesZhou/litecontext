@@ -224,6 +224,9 @@ func TestServeOnceCommandRecordsAnEvent(t *testing.T) {
 }
 
 func TestHostHookCommandInjectsACitation(t *testing.T) {
+	previousDeadline := hookDeadline
+	hookDeadline = func(string, string) time.Duration { return time.Second }
+	t.Cleanup(func() { hookDeadline = previousDeadline })
 	source := t.TempDir()
 	if err := os.WriteFile(filepath.Join(source, "public.md"), []byte("---\nvisibility: public\n---\n# Shared\n\nA shared rule.\n"), 0o600); err != nil {
 		t.Fatal(err)
