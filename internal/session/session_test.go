@@ -770,6 +770,10 @@ func TestDeliveryRecordsEmittedEntries(t *testing.T) {
 	if rejected.OK {
 		t.Fatal("accepted an entry role that is not emitted context")
 	}
+	rejected = Handle(context.Background(), b, []byte(`{"version":1,"op":"deliver","eventId":"turn-bad-flag","delivery":{"text":"nope","selected":1,"emitted":1,"entriesTruncated":true}}`))
+	if rejected.OK {
+		t.Fatal("accepted truncation without an entry list")
+	}
 }
 
 func TestDeliveryTruncatesStoredEntries(t *testing.T) {
@@ -783,12 +787,14 @@ func TestDeliveryTruncatesStoredEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored, err := ReadEmission(dir, "turn-entry-cap")
-	if err != nil || stored.Entries == nil || len(*stored.Entries) != maxStoredEntries+1 {
+	if err != nil || stored.Entries == nil || len(*stored.Entries) != maxStoredEntries {
 		t.Fatalf("len=%v err=%v", stored.Entries, err)
 	}
-	last := (*stored.Entries)[maxStoredEntries]
-	if last.Role != "omission" || last.Reason != "truncated" || last.Ref != nil {
-		t.Fatalf("tail: %+v", last)
+	if stored.EntriesTruncated == nil || !*stored.EntriesTruncated {
+		t.Fatal("count cap was not marked truncated")
+	}
+	if (*stored.Entries)[len(*stored.Entries)-1].Role != "knowledge" {
+		t.Fatalf("tail: %+v", (*stored.Entries)[len(*stored.Entries)-1])
 	}
 }
 
@@ -806,9 +812,13 @@ func TestDeliveryShrinksEntriesToTheFileLimit(t *testing.T) {
 	if err != nil || stored.Entries == nil || len(*stored.Entries) < 2 || len(*stored.Entries) >= len(items) {
 		t.Fatalf("len=%v err=%v", stored.Entries, err)
 	}
-	last := (*stored.Entries)[len(*stored.Entries)-1]
-	if last.Reason != "truncated" {
-		t.Fatalf("tail: %+v", last)
+	if stored.EntriesTruncated == nil || !*stored.EntriesTruncated {
+		t.Fatal("byte cap was not marked truncated")
+	}
+	for _, item := range *stored.Entries {
+		if item.Role == "omission" {
+			t.Fatalf("identity list contains an omission sentinel: %+v", item)
+		}
 	}
 	info, err := os.Stat(filepath.Join(dir, "events", "delivery", "turn-entry-bytes.json"))
 	if err != nil || info.Size() > int64(maxEmissionFileBytes) {
