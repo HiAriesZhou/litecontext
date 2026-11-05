@@ -393,6 +393,106 @@ func TestCatalogDetachesSourceExtensions(t *testing.T) {
 	}
 }
 
+func TestCatalogDetachesNestedExtensions(t *testing.T) {
+	b := newBundle(t)
+	info, err := b.AddProducer(context.Background(), "notes", testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = b.access(context.Background(), true, func(s *snapshot) error {
+		entry, ok := s.Sources[info.Record.ID]
+		if !ok {
+			return errors.New("missing source")
+		}
+		entry.Record.Extensions = map[string]any{
+			"connector.local-files.sync": map[string]any{"generation": int64(7), "flags": []any{"kept"}},
+		}
+		s.Sources[info.Record.ID] = entry
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := b.Sources(context.Background())
+	if err != nil || len(first) != 1 {
+		t.Fatalf("sources: %v %+v", err, first)
+	}
+	sync := first[0].Record.Extensions["connector.local-files.sync"].(map[string]any)
+	sync["generation"] = int64(9)
+	sync["flags"].([]any)[0] = "changed"
+	first[0].Record.Extensions["connector.local-files.extra"] = "added"
+	err = b.access(context.Background(), true, func(s *snapshot) error {
+		entry := s.Sources[info.Record.ID]
+		nested := entry.Record.Extensions["connector.local-files.sync"].(map[string]any)
+		nested["generation"] = int64(3)
+		nested["flags"].([]any)[0] = "dirty"
+		return errors.New("stop")
+	})
+	if err == nil || err.Error() != "stop" {
+		t.Fatalf("write error = %v", err)
+	}
+	second, err := b.Sources(context.Background())
+	if err != nil || len(second) != 1 {
+		t.Fatalf("sources after mutation: %v %+v", err, second)
+	}
+	got := second[0].Record.Extensions["connector.local-files.sync"].(map[string]any)
+	if _, extra := second[0].Record.Extensions["connector.local-files.extra"]; extra || got["generation"] != int64(7) || got["flags"].([]any)[0] != "kept" {
+		t.Fatalf("nested extension aliased the cache: %+v", second[0].Record.Extensions)
+	}
+}
+
+func TestCloneSnapshotDetachesNestedExtensions(t *testing.T) {
+	original := snapshot{
+		Sources: map[string]sourceState{
+			"src": {Record: contextmodel.CanonicalSourceRecord{Extensions: map[string]any{
+				"connector.local-files.sync": map[string]any{"generation": int64(7), "flags": []any{"kept"}, "empty": []any(nil)},
+			}}},
+		},
+		Items: map[string]itemState{
+			"itm": {Versions: map[string]contextmodel.CanonicalContextItem{
+				"h": {
+					Extensions: map[string]any{"connector.local-files.sync": map[string]any{"note": map[string]any{"text": "kept"}}},
+					Attributes: contextmodel.CanonicalAttributes{Tags: []string{"kept"}},
+				},
+			}},
+		},
+	}
+	before, err := encodeCanonical(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &Bundle{}
+	b.storeSnapshot("sha256:test", before, original, false)
+	cloned, canonical, ok := b.cachedSnapshot("sha256:test")
+	if !ok || string(canonical) != string(before) {
+		t.Fatalf("cached snapshot = %v %q", ok, canonical)
+	}
+	sourceNested := cloned.Sources["src"].Record.Extensions["connector.local-files.sync"].(map[string]any)
+	sourceNested["generation"] = int64(9)
+	sourceNested["flags"].([]any)[0] = "changed"
+	sourceNested["empty"] = []any{"added"}
+	itemNested := cloned.Items["itm"].Versions["h"].Extensions["connector.local-files.sync"].(map[string]any)
+	itemNested["note"].(map[string]any)["text"] = "changed"
+	cloned.Items["itm"].Versions["h"].Attributes.Tags[0] = "changed"
+	cached := b.cachedSnap
+	gotSource := cached.Sources["src"].Record.Extensions["connector.local-files.sync"].(map[string]any)
+	gotItem := cached.Items["itm"].Versions["h"].Extensions["connector.local-files.sync"].(map[string]any)
+	empty, ok := gotSource["empty"].([]any)
+	if gotSource["generation"] != int64(7) || gotSource["flags"].([]any)[0] != "kept" || !ok || empty != nil {
+		t.Fatalf("source extension aliased the cache: %+v", gotSource)
+	}
+	if gotItem["note"].(map[string]any)["text"] != "kept" || cached.Items["itm"].Versions["h"].Attributes.Tags[0] != "kept" {
+		t.Fatalf("item extension aliased the cache: %+v %v", gotItem, cached.Items["itm"].Versions["h"].Attributes.Tags)
+	}
+	after, err := encodeCanonical(cached)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("clone changed canonical snapshot\nbefore %s\nafter  %s", before, after)
+	}
+}
+
 func TestCollectRequiresDirectory(t *testing.T) {
 	b := newBundle(t)
 	file := filepath.Join(t.TempDir(), "note.md")

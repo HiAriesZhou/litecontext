@@ -3,7 +3,6 @@ package bundle
 import (
 	"context"
 	"fmt"
-	"maps"
 	"sort"
 	"strings"
 	"unicode"
@@ -154,9 +153,7 @@ func (b *Bundle) Catalog(ctx context.Context) (string, uint64, []SourceInfo, err
 		generation = s.Generation
 		for _, entry := range s.Sources {
 			record := entry.Record
-			if record.Extensions != nil {
-				record.Extensions = maps.Clone(record.Extensions)
-			}
+			record.Extensions = cloneExtensions(record.Extensions)
 			result = append(result, SourceInfo{Record: record, Active: entry.Active})
 		}
 		return nil
