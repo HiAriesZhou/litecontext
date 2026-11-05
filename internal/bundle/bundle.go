@@ -60,9 +60,10 @@ type head struct {
 	Snapshot string `json:"snapshot"`
 }
 type Bundle struct {
-	dir        string
-	expected   atomic.Uint64
-	commitHook func(string) error
+	dir           string
+	expected      atomic.Uint64
+	commitHook    func(string) error
+	afterReadLock func()
 
 	mu              sync.Mutex
 	cachedHash      string
@@ -128,6 +129,9 @@ func Open(dir string) (*Bundle, error) {
 	return b, err
 }
 func (b *Bundle) access(ctx context.Context, write bool, fn func(*snapshot) error) error {
+	if !write {
+		return b.readSnapshot(ctx, fn)
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -219,6 +223,88 @@ func (b *Bundle) access(ctx context.Context, write bool, fn func(*snapshot) erro
 	b.expected.Store(s.Generation)
 	return nil
 }
+
+func (b *Bundle) readSnapshot(ctx context.Context, fn func(*snapshot) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	info, err := os.Lstat(b.dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("bundle must be a real directory")
+	}
+	r, err := os.OpenRoot(b.dir)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	m, err := readManifest(r)
+	if err != nil {
+		return err
+	}
+	release, err := lockBundle(ctx, r)
+	if err != nil {
+		return err
+	}
+	locked := true
+	defer func() {
+		if locked {
+			release()
+		}
+	}()
+	if err = realDirectory(r, "snapshots"); err != nil {
+		return err
+	}
+	hash, err := currentSnapshotHash(r)
+	if err != nil {
+		return err
+	}
+	live := snapshotFile(hash)
+	if err = cleanSnapshots(r, live); err != nil {
+		return err
+	}
+	if cached, _, ok := b.cachedSnapshot(hash); ok {
+		release()
+		locked = false
+		b.notifyReadUnlocked()
+		return fn(&cached)
+	}
+	data, err := readRegular(r, live, maximumSnapshotBytes)
+	if err != nil {
+		return err
+	}
+	release()
+	locked = false
+	b.notifyReadUnlocked()
+	if err = ctx.Err(); err != nil {
+		return err
+	}
+	if digest(data) != hash {
+		return fmt.Errorf("snapshot digest mismatch")
+	}
+	var s snapshot
+	if strictjson.Decode(data, &s) != nil {
+		return fmt.Errorf("invalid snapshot JSON")
+	}
+	if err = validateSnapshot(s, m); err != nil {
+		return fmt.Errorf("invalid snapshot records")
+	}
+	canonical, err := encodeCanonical(s)
+	if err != nil {
+		return err
+	}
+	b.storeSnapshot(hash, canonical, s, true)
+	return fn(&s)
+}
+
+func (b *Bundle) notifyReadUnlocked() {
+	if b.afterReadLock != nil {
+		b.afterReadLock()
+	}
+}
+
 func (b *Bundle) cachedSnapshot(hash string) (snapshot, []byte, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
