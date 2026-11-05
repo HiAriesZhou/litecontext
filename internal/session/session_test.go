@@ -300,7 +300,7 @@ func TestDeliverRecordsThroughTheSessionContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Text != "cited line" || stored.Selected != 2 || stored.Emitted != 1 || stored.Acknowledged != "unknown" || stored.Used != "unknown" || stored.EventID != "turn-9" {
+	if stored.Text != "cited line" || stored.Selected != 2 || stored.Emitted != 1 || stored.Acknowledged != "unknown" || stored.Used != "unknown" || stored.EventID != "turn-9" || stored.ElapsedMs != nil {
 		t.Fatalf("stored: %+v", stored)
 	}
 	replaced := Handle(context.Background(), b, []byte(`{"op":"deliver","eventId":"turn-9","delivery":{"text":"later line","selected":2,"emitted":2}}`))
@@ -315,6 +315,8 @@ func TestDeliverRecordsThroughTheSessionContract(t *testing.T) {
 		`{"op":"deliver","eventId":"../x","delivery":{"text":"x","selected":1,"emitted":1}}`,
 		`{"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":2}}`,
 		`{"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":1,"acknowledged":"yes"}}`,
+		`{"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":1,"elapsedMs":-1}}`,
+		`{"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":1,"elapsedMs":600001}}`,
 		`{"op":"deliver","delivery":{"text":"x","selected":1,"emitted":1}}`,
 	}
 	for _, raw := range rejected {
@@ -499,4 +501,79 @@ func fmtPack(t *testing.T, response Response) string {
 		t.Fatal(err)
 	}
 	return string(encoded)
+}
+
+func TestInspectSeparatesCurrentMemoryAndDelivery(t *testing.T) {
+	dir := fixtureBundle(t)
+	b, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if saved := Handle(ctx, b, []byte(`{"op":"checkpoint","task":{"goal":"Ship the checkpoint","next":"Inspect the pack"}}`)); !saved.OK {
+		t.Fatalf("checkpoint: %+v", saved)
+	}
+	hash := "sha256:" + strings.Repeat("ab", 32)
+	propose := `{"op":"memory","memory":{"action":"propose","id":"use-local","text":"Do not use the remote API","scope":"project","evidence":[{"sourceId":"src_missing","itemId":"itm_decision","recordHash":"` + hash + `"}]}}`
+	if saved := Handle(ctx, b, []byte(propose)); !saved.OK {
+		t.Fatalf("propose: %+v", saved)
+	}
+	if saved := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"confirm","id":"use-local"}}`)); !saved.OK {
+		t.Fatalf("confirm: %+v", saved)
+	}
+	next := "sha256:" + strings.Repeat("cd", 32)
+	replace := `{"op":"memory","memory":{"action":"supersede","id":"use-local-v2","supersedes":"use-local","text":"Use the local API","scope":"project","evidence":[{"sourceId":"src_missing","itemId":"itm_replacement","recordHash":"` + next + `"}]}}`
+	if saved := Handle(ctx, b, []byte(replace)); !saved.OK {
+		t.Fatalf("supersede: %+v", saved)
+	}
+	if saved := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"confirm","id":"use-local-v2"}}`)); !saved.OK {
+		t.Fatalf("confirm replacement: %+v", saved)
+	}
+	if saved := Handle(ctx, b, []byte(`{"op":"record","event":{"id":"turn-inspect","kind":"prompt","body":"Inspect the pack"}}`)); !saved.OK {
+		t.Fatalf("record: %+v", saved)
+	}
+	elapsed := 12
+	delivered := Handle(ctx, b, []byte(`{"op":"deliver","eventId":"turn-inspect","delivery":{"text":"Goal: Ship the checkpoint\nUse the local API","selected":2,"emitted":2,"elapsedMs":12}}`))
+	if !delivered.OK {
+		t.Fatalf("deliver: %+v", delivered)
+	}
+	report, err := Inspect(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(encoded)
+	if strings.Contains(body, dir) {
+		t.Fatalf("report contains a bundle path: %s", body)
+	}
+	if report.Task == nil || report.Task.Goal != "Ship the checkpoint" {
+		t.Fatalf("task: %+v", report.Task)
+	}
+	if len(report.CurrentMemories) != 1 || report.CurrentMemories[0].ID != "use-local-v2" || strings.Contains(report.CurrentMemories[0].Text, "remote API") {
+		t.Fatalf("current: %+v", report.CurrentMemories)
+	}
+	foundOld := false
+	for _, memory := range report.Memories {
+		if memory.ID == "use-local" && memory.Status == "superseded" {
+			foundOld = true
+		}
+	}
+	if !foundOld {
+		t.Fatalf("history: %+v", report.Memories)
+	}
+	if len(report.Deliveries) != 1 || report.Deliveries[0].Text != "Goal: Ship the checkpoint\nUse the local API" || report.Deliveries[0].ElapsedMs == nil || *report.Deliveries[0].ElapsedMs != elapsed || report.Deliveries[0].Selected != 2 || report.Deliveries[0].Emitted != 2 {
+		t.Fatalf("delivery: %+v", report.Deliveries)
+	}
+	if len(report.Events) != 1 || report.Events[0].ID != "turn-inspect" || report.Events[0].Kind != "prompt" {
+		t.Fatalf("events: %+v", report.Events)
+	}
+	response := Handle(ctx, b, []byte(`{"op":"inspect"}`))
+	inspected, ok := response.Result.(Report)
+	if !response.OK || !ok || inspected.Task == nil || inspected.Task.Goal != "Ship the checkpoint" || len(inspected.CurrentMemories) != 1 {
+		t.Fatalf("inspect op: %+v", response)
+	}
+	_ = body
 }

@@ -6,7 +6,7 @@ LiteContext keeps source files in place and uses inspectable, portable files wit
 
 ## Status
 
-Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. `lc serve` exposes those reads, plus append-only session events, a replaceable task checkpoint, explicit memory changes, and a bounded context pack, over newline-delimited JSON. `lc host hook` maps one Codex or Claude Code hook event onto that contract and does not install host configuration. A memory is included only after it is confirmed. Windows file locking compiles into the native binary, but it has not been run on Windows.
+Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. `lc serve` exposes those reads, plus append-only session events, a replaceable task checkpoint, explicit memory changes, a bounded context pack, and a read-only inspect report, over newline-delimited JSON. `lc host hook` maps one Codex or Claude Code hook event onto that contract and does not install host configuration. `lc inspect` prints the stored task, memories, events, and deliveries without starting a viewer or a service. A memory is included only after it is confirmed. A delivery record may include elapsed milliseconds; a record written without that field still reads. Windows file locking compiles into the native binary, but it has not been run on Windows.
 
 ## Quick start
 
@@ -26,6 +26,7 @@ JSON
 ./bin/lc host hook --bundle /path/to/new-bundle <<'JSON'
 {"hook_event_name":"UserPromptSubmit","session_id":"example","prompt":"project rule"}
 JSON
+./bin/lc inspect --bundle /path/to/new-bundle
 ```
 
 `lc host hook` gives a prompt 200ms and any other event one second. When the bundle or the deadline fails, it writes nothing to stdout and exits 0.
@@ -39,6 +40,8 @@ The bundle destination must be absent or empty. Reuse the same source name to re
 - `internal/bundle/` — file storage and Markdown collection.
 - `internal/contextmodel/` — typed records, validation, stable IDs and canonical JSON.
 - `internal/ingest/` — read-only Markdown scanning.
+- `internal/session/` — session contract, task checkpoints, memory, and inspect.
+- `internal/host/` — one-shot Codex and Claude Code hook adapter.
 - `contracts/context-model/v1/` — portable record schemas.
 - `contracts/bundle/v1/` — bundle manifest and snapshot schemas.
 - `docs/architecture/overview.md` — implemented storage and collection.

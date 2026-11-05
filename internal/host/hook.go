@@ -90,6 +90,7 @@ func Wait(parent context.Context, deadline time.Duration, fn func(context.Contex
 // returns the injection JSON. Failures return a fixed stderr note and no stdout.
 // The input's cwd and transcript path are ignored and are not stored.
 func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, string) {
+	started := time.Now()
 	if ctx.Err() != nil {
 		return nil, "hook skipped: deadline"
 	}
@@ -175,9 +176,10 @@ func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, st
 		Op:      "deliver",
 		EventID: id,
 		Delivery: &session.DeliveryInput{
-			Text:     text,
-			Selected: pack.Delivery.Selected,
-			Emitted:  pack.Delivery.Emitted,
+			Text:      text,
+			Selected:  pack.Delivery.Selected,
+			Emitted:   pack.Delivery.Emitted,
+			ElapsedMs: elapsedMilliseconds(started),
 		},
 	})
 	if err != nil || !session.Handle(ctx, store, deliveryLine).OK {
@@ -283,4 +285,15 @@ func truncateBytes(value string, max int) string {
 		max--
 	}
 	return value[:max]
+}
+
+func elapsedMilliseconds(started time.Time) *int {
+	elapsed := int(time.Since(started) / time.Millisecond)
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	if elapsed > 600000 {
+		elapsed = 600000
+	}
+	return &elapsed
 }

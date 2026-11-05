@@ -378,8 +378,9 @@ func TestInjectionRecordsTheRenderedContext(t *testing.T) {
 		Emitted      int    `json:"emitted"`
 		Acknowledged string `json:"acknowledged"`
 		Used         string `json:"used"`
+		ElapsedMs    *int   `json:"elapsedMs"`
 	}
-	if json.Unmarshal(raw, &stored) != nil || stored.Text != out.HookSpecificOutput.AdditionalContext || stored.Emitted < 1 || stored.Selected < stored.Emitted || strings.Contains(stored.Text, "DEVICE_CWD_SENTINEL") {
+	if json.Unmarshal(raw, &stored) != nil || stored.Text != out.HookSpecificOutput.AdditionalContext || stored.Emitted < 1 || stored.Selected < stored.Emitted || stored.ElapsedMs == nil || *stored.ElapsedMs < 0 || strings.Contains(stored.Text, "DEVICE_CWD_SENTINEL") {
 		t.Fatalf("delivery=%s", raw)
 	}
 	if stored.Acknowledged != "unknown" || stored.Used != "unknown" {
