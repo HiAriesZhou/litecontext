@@ -6,7 +6,7 @@ LiteContext keeps source files in place and uses inspectable, portable files wit
 
 ## Status
 
-Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. `lc serve` exposes those reads, plus append-only session events, a replaceable task checkpoint, explicit memory changes, a bounded context pack, and a read-only inspect report, over newline-delimited JSON at session contract version 1. `lc host hook` maps one Codex or Claude Code hook event onto that contract and does not install host configuration. `lc inspect` prints the stored task, memories, events, and deliveries without starting a viewer or a service. A memory is included only after it is confirmed. A delivery record may include elapsed milliseconds; a record written without that field still reads. CI runs the Go suite on Windows. A Windows agent hook has not been observed.
+Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. `lc serve` exposes those reads, plus append-only session events, a replaceable task checkpoint, explicit memory changes, a bounded context pack, and a read-only inspect report, over newline-delimited JSON at session contract version 1. `lc host hook` maps one Codex or Claude Code hook event onto that contract and does not install host configuration. `lc inspect` prints the stored task, memories, events, and deliveries without starting a service. `lc view` writes those stored records, plus source id, name, type, active state, and update time, to one self-contained HTML file and exits. It does not change memory. Connected hosts, selected files, collection failure, replay, processing stage, per-entry source version, and omission reason are labeled unknown. A memory is included only after it is confirmed. A delivery record may include elapsed milliseconds; a record written without that field still reads. CI runs the Go suite on Windows. A Windows agent hook has not been observed.
 
 ## Quick start
 
@@ -27,6 +27,7 @@ JSON
 {"hook_event_name":"UserPromptSubmit","session_id":"example","prompt":"project rule"}
 JSON
 ./bin/lc inspect --bundle /path/to/new-bundle
+./bin/lc view --bundle /path/to/new-bundle --output /path/to/report.html
 ```
 
 `lc host hook` gives a prompt 200ms and any other event one second. When the bundle or the deadline fails, it writes nothing to stdout and exits 0.
@@ -41,6 +42,7 @@ The bundle destination must be absent or empty. Reuse the same source name to re
 - `internal/contextmodel/` — typed records, validation, stable IDs and canonical JSON.
 - `internal/ingest/` — read-only Markdown scanning.
 - `internal/session/` — session contract, task checkpoints, memory, and inspect.
+- `internal/view/` — read-only HTML report.
 - `internal/host/` — one-shot Codex and Claude Code hook adapter.
 - `contracts/context-model/v1/` — portable record schemas.
 - `contracts/bundle/v1/` — bundle manifest and snapshot schemas.
