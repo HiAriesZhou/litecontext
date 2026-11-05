@@ -226,6 +226,9 @@ func rejectCaseFoldedPaths(items map[string]contextmodel.CanonicalContextItem) e
 		if right < left {
 			left, right = right, left
 		}
+		if left == right {
+			return fmt.Errorf("portable path %q is already current; previous snapshot retained", left)
+		}
 		return fmt.Errorf("portable paths %q and %q differ only by case; previous snapshot retained", left, right)
 	}
 	return nil
