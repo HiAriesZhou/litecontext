@@ -11,7 +11,7 @@ LiteContext is a local-first information layer for Agent Context, Memory and Kno
 - MCP is stdio-only. Do not add a daemon, network listener or background lifecycle.
 - Keep temporary task state separate from durable memory.
 - Fail closed on unknown required rules, identity or capabilities.
-- Do not claim unimplemented Memory, retrieval or host integration features exist.
+- Do not claim unimplemented Memory activation, host integration, or Windows storage exists. `lc serve` is the implemented session contract.
 - `docs/architecture/information-layer.md` is the target shape, not implemented behavior.
 
 ## Commands

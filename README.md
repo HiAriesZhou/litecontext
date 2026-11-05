@@ -6,7 +6,7 @@ LiteContext keeps source files in place and uses inspectable, portable files wit
 
 ## Status
 
-Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. Memory management, context delivery, MCP, and automatic host integration are not implemented yet.
+Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. `lc serve` exposes those reads, plus append-only session events and a bounded context pack, over newline-delimited JSON. Memory activation, host adapters, and Windows storage are not implemented yet.
 
 ## Quick start
 
@@ -20,6 +20,9 @@ go build -o ./bin/lc ./cmd/litecontext
 ./bin/lc collect git /path/to/repository --bundle /path/to/new-bundle --name repository --json
 ./bin/lc source list --bundle /path/to/new-bundle --json
 ./bin/lc search "project rule" --bundle /path/to/new-bundle --visibility public --json
+./bin/lc serve --bundle /path/to/new-bundle --once <<'JSON'
+{"op":"prepare","query":"project rule","budget":2000}
+JSON
 ```
 
 The bundle destination must be absent or empty. Reuse the same source name to refresh its snapshot. Source files are read only. Keep bundles outside source repositories when possible: they contain collected content and should not be committed.

@@ -190,3 +190,33 @@ func TestGitAndProducerCLIUseSameReadableBundle(t *testing.T) {
 	}
 	captureStdout(t, func() error { return run([]string{"bundle", "validate", "--bundle", dir, "--json"}) })
 }
+
+func TestServeOnceCommandRecordsAnEvent(t *testing.T) {
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "note.md"), []byte("# Rule\n\nPortable rule.\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "bundle")
+	captureStdout(t, func() error { return run([]string{"bundle", "init", dir, "--json"}) })
+	captureStdout(t, func() error {
+		return run([]string{"collect", "markdown", source, "--bundle", dir, "--name", "notes", "--json"})
+	})
+	input, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = writer.WriteString("{\"op\":\"record\",\"event\":{\"id\":\"cli-1\",\"kind\":\"note\",\"body\":\"Portable rule\"}}\n"); err != nil {
+		t.Fatal(err)
+	}
+	writer.Close()
+	previous := os.Stdin
+	os.Stdin = input
+	t.Cleanup(func() { os.Stdin = previous })
+	output := captureStdout(t, func() error { return run([]string{"serve", "--bundle", dir, "--once"}) })
+	if !strings.Contains(output, `"ok":true`) || strings.Contains(output, `"replay":true`) {
+		t.Fatalf("serve output: %s", output)
+	}
+	if _, err = os.Stat(filepath.Join(dir, "events", "cli-1.json")); err != nil {
+		t.Fatal(err)
+	}
+}

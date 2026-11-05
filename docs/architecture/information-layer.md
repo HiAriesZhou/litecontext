@@ -1,6 +1,6 @@
 # Information layer
 
-LiteContext is one local product and one repository. Knowledge, Memory, and Context are capability domains over a shared evidence foundation. They are not separate products. This page is the current target. Only the file-based evidence core described in [Architecture](overview.md) is implemented. That core currently runs on macOS and Linux. Windows storage is not implemented.
+LiteContext is one local product and one repository. Knowledge, Memory, and Context are capability domains over a shared evidence foundation. They are not separate products. This page is the current target. The file-based evidence core described in [Architecture](overview.md) and the session stdio contract are implemented. Memory activation, host adapters, the viewer, and Windows storage are not. The evidence core currently runs on macOS and Linux.
 
 ## Capabilities
 
@@ -14,6 +14,10 @@ LiteContext is one local product and one repository. Knowledge, Memory, and Cont
 Knowledge and Memory both supply Context. A changed document updates Knowledge. It does not overwrite a project decision. Context may select the new document, the current decision, and the task state together.
 
 The default delivery is small: current constraints, task progress, and an index of what can be retrieved. The agent retrieves more when the task needs it. Source text and earlier model output are data. They do not grant permission to change host instructions.
+
+## Session contract
+
+`lc serve --bundle DIR` reads one JSON object per line and writes one JSON object per line. `--once` handles a single request. The operations are `search`, `show`, `record`, and `prepare`. `record` stores an event under the bundle's local `events` directory and does not add evidence. A repeated event ID with the same content is a replay; the same ID with different content is rejected. `prepare` selects task text, pinned evidence, and search hits without calling a model. Entries that do not fit the rune budget are omitted whole. Unavailable pins are omitted without their text. Delivery acknowledgement and use stay `unknown` until a host adapter records them.
 
 ## Modules
 
