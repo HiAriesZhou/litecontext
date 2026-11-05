@@ -1,6 +1,6 @@
 # Architecture
 
-LiteContext is a local-first information layer with a file-based collection core and CLI. It runs without a daemon or network listener. Bundle storage is implemented for macOS and Linux, using atomic rename and file locks. The Windows build uses the same bundle format; its lock compiles and has not been run on Windows.
+LiteContext is a local-first information layer with a file-based collection core and CLI. It runs without a daemon or network listener. Bundle storage is implemented for macOS and Linux, using atomic rename and file locks. CI runs the same suite on Windows. A Windows agent hook has not been observed.
 
 ```text
 Selected Markdown files → read-only scanner → validated ContextItems → atomic bundle snapshot
