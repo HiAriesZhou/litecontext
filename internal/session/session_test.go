@@ -416,3 +416,87 @@ func TestCheckpointSurvivesTheNextPrepare(t *testing.T) {
 		t.Fatalf("corrupt pack: %+v", corruptPack)
 	}
 }
+
+func TestMemoryConfirmationAndSupersession(t *testing.T) {
+	dir := fixtureBundle(t)
+	b, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	hash := "sha256:" + strings.Repeat("ab", 32)
+	propose := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"propose","id":"use-local","text":"Do not use the remote API","scope":"project","evidence":[{"sourceId":"src_missing","itemId":"itm_decision","recordHash":"`+hash+`"}]}}`))
+	if !propose.OK {
+		t.Fatalf("propose: %+v", propose)
+	}
+	if corrected := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"correct","id":"use-local","text":"Do not call the remote API"}}`)); !corrected.OK {
+		t.Fatalf("correct: %+v", corrected)
+	}
+	before := Handle(ctx, b, []byte(`{"op":"prepare","query":"shared rule","budget":4000,"visibility":"public"}`))
+	if !before.OK || strings.Contains(fmtPack(t, before), "remote API") {
+		t.Fatalf("candidate was selected: %+v", before.Result)
+	}
+	if len(before.Result.(Pack).Entries) != 1 || before.Result.(Pack).Entries[0].Role != "knowledge" {
+		t.Fatalf("knowledge without memory: %+v", before.Result)
+	}
+	if confirm := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"confirm","id":"use-local"}}`)); !confirm.OK {
+		t.Fatalf("confirm: %+v", confirm)
+	}
+	public := Handle(ctx, b, []byte(`{"op":"prepare","query":"shared rule","budget":4000,"visibility":"public"}`))
+	if !public.OK || strings.Contains(fmtPack(t, public), "remote API") {
+		t.Fatalf("private memory leaked: %s", fmtPack(t, public))
+	}
+	selected := Handle(ctx, b, []byte(`{"op":"prepare","query":"shared rule","budget":4000}`))
+	if !selected.OK || !strings.Contains(fmtPack(t, selected), "Do not call the remote API") || !strings.Contains(fmtPack(t, selected), "src_missing/itm_decision") || !strings.Contains(fmtPack(t, selected), "public.md") {
+		t.Fatalf("active memory: %s", fmtPack(t, selected))
+	}
+	found := Handle(ctx, b, []byte(`{"op":"search","query":"remote API"}`))
+	if !found.OK || len(found.Result.([]bundle.Evidence)) != 0 {
+		t.Fatalf("memory became evidence: %+v", found.Result)
+	}
+	next := "sha256:" + strings.Repeat("cd", 32)
+	replacement := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"supersede","id":"use-local-v2","supersedes":"use-local","text":"Use the local API","scope":"project","evidence":[{"sourceId":"src_missing","itemId":"itm_replacement","recordHash":"`+next+`"}]}}`))
+	if !replacement.OK {
+		t.Fatalf("supersede: %+v", replacement)
+	}
+	gap := Handle(ctx, b, []byte(`{"op":"prepare","budget":4000}`))
+	body := fmtPack(t, gap)
+	if !gap.OK || strings.Contains(body, "remote API") || strings.Contains(body, "Use the local API") {
+		t.Fatalf("superseded decision still current: %s", body)
+	}
+	if confirmed := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"confirm","id":"use-local-v2"}}`)); !confirmed.OK {
+		t.Fatalf("confirm replacement: %+v", confirmed)
+	}
+	current := fmtPack(t, Handle(ctx, b, []byte(`{"op":"prepare","budget":4000}`)))
+	if strings.Contains(current, "remote API") || !strings.Contains(current, "Use the local API") || !strings.Contains(current, "itm_replacement") {
+		t.Fatalf("current memory: %s", current)
+	}
+	if revoked := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"revoke","id":"use-local-v2"}}`)); !revoked.OK {
+		t.Fatalf("revoke: %+v", revoked)
+	}
+	if after := fmtPack(t, Handle(ctx, b, []byte(`{"op":"prepare","budget":4000}`))); strings.Contains(after, "local API") {
+		t.Fatalf("revoked memory selected: %s", after)
+	}
+	rejected := []string{
+		`{"op":"memory","memory":{"action":"propose","id":"bare","text":"No citation","scope":"project"}}`,
+		`{"op":"memory","memory":{"action":"confirm","id":"missing"}}`,
+		`{"op":"memory","memory":{"action":"correct","id":"use-local","text":"rewrite history"}}`,
+	}
+	for _, raw := range rejected {
+		if response := Handle(ctx, b, []byte(raw)); response.OK {
+			t.Fatalf("accepted %s", raw)
+		}
+	}
+}
+
+func fmtPack(t *testing.T, response Response) string {
+	t.Helper()
+	if !response.OK {
+		t.Fatalf("response: %+v", response)
+	}
+	encoded, err := json.Marshal(response.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
