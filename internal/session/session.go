@@ -221,24 +221,35 @@ func prepare(ctx context.Context, b *bundle.Bundle, request Request) (Pack, erro
 		resolved := fromEvidence(evidence.Ref)
 		candidates = append(candidates, Entry{Role: "pin", Text: evidence.Text, Ref: &resolved, Locator: evidence.Locator})
 	}
-	if strings.TrimSpace(request.Query) != "" {
-		hits, err := b.Search(ctx, request.Query, scope(request), limit(request.Limit, 10, 20))
-		if err != nil {
-			return Pack{}, err
+	if strings.TrimSpace(request.Query) != "" && len(request.Terms) > 0 {
+		return Pack{}, fmt.Errorf("invalid request")
+	}
+	var hits []bundle.Evidence
+	var err error
+	switch {
+	case strings.TrimSpace(request.Query) != "":
+		hits, err = b.Search(ctx, request.Query, scope(request), limit(request.Limit, 10, 20))
+	case len(request.Terms) > 0:
+		hits, err = b.SearchAny(ctx, request.Terms, scope(request), limit(request.Limit, 10, 20))
+	}
+	if err != nil {
+		return Pack{}, err
+	}
+	for _, hit := range hits {
+		key := hit.Ref.SourceID + "\x00" + hit.Ref.ItemID + "\x00" + hit.Ref.RecordHash
+		if seen[key] {
+			continue
 		}
-		for _, hit := range hits {
-			key := hit.Ref.SourceID + "\x00" + hit.Ref.ItemID + "\x00" + hit.Ref.RecordHash
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			resolved := fromEvidence(hit.Ref)
-			candidates = append(candidates, Entry{Role: "knowledge", Text: hit.Text, Ref: &resolved, Locator: hit.Locator})
-		}
+		seen[key] = true
+		resolved := fromEvidence(hit.Ref)
+		candidates = append(candidates, Entry{Role: "knowledge", Text: hit.Text, Ref: &resolved, Locator: hit.Locator})
 	}
 	used := 0
 	for _, candidate := range candidates {
-		cost := utf8.RuneCountInString(candidate.Text)
+		cost := renderedCost(candidate, len(pack.Entries))
+		if cost == 0 {
+			continue
+		}
 		if used+cost > budget {
 			omissions = append(omissions, Omission{Role: candidate.Role, Ref: candidate.Ref, Reason: "budget"})
 			continue

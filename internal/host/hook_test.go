@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/HiAriesZhou/litecontext/internal/bundle"
+	"github.com/HiAriesZhou/litecontext/internal/session"
 )
 
 func TestPromptInjectionIncludesOwnerRecordsAndCitation(t *testing.T) {
@@ -303,4 +304,43 @@ func eventCount(t *testing.T, dir string) int {
 		}
 	}
 	return count
+}
+
+func TestPromptInjectionMatchesPrepare(t *testing.T) {
+	dir := fixtureBundle(t)
+	prompt := "where is the shared rule?"
+	stdout, note := Hook(context.Background(), dir, "", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "sess-prepare",
+		"prompt":          prompt,
+	}))
+	if note != "" || stdout == nil {
+		t.Fatalf("note=%q stdout=%s", note, stdout)
+	}
+	store, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := json.Marshal(session.Request{
+		Op: "prepare", Terms: session.PromptTerms(prompt), Limit: 10, Budget: 2000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared := session.Handle(context.Background(), store, line)
+	if !prepared.OK {
+		t.Fatalf("prepare: %+v", prepared)
+	}
+	pack, ok := prepared.Result.(session.Pack)
+	if !ok {
+		t.Fatalf("pack: %#v", prepared.Result)
+	}
+	var out struct {
+		HookSpecificOutput struct {
+			AdditionalContext string `json:"additionalContext"`
+		} `json:"hookSpecificOutput"`
+	}
+	if json.Unmarshal(stdout, &out) != nil || out.HookSpecificOutput.AdditionalContext != session.Render(pack.Entries) {
+		t.Fatalf("hook=%s render=%q", stdout, session.Render(pack.Entries))
+	}
 }

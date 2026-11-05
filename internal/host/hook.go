@@ -6,8 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -15,7 +13,6 @@ import (
 
 	"github.com/HiAriesZhou/litecontext/internal/bundle"
 	"github.com/HiAriesZhou/litecontext/internal/session"
-	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -140,16 +137,36 @@ func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, st
 	}
 	var terms []string
 	if kind == "prompt" {
-		terms = selectTerms(in.Prompt)
+		terms = session.PromptTerms(in.Prompt)
 	}
 	if len(terms) == 0 {
 		return nil, note
 	}
-	entries, searchNote := searchEntries(ctx, store, visibility, terms)
-	if searchNote != "" {
-		return nil, searchNote
+	if ctx.Err() != nil {
+		return nil, "hook skipped: deadline"
 	}
-	text := render(entries)
+	line, err := json.Marshal(session.Request{
+		Op:         "prepare",
+		Terms:      terms,
+		Limit:      10,
+		Budget:     prepareBudget,
+		Visibility: visibility,
+	})
+	if err != nil {
+		return nil, "hook skipped: request failed"
+	}
+	response := session.Handle(ctx, store, line)
+	if ctx.Err() != nil {
+		return nil, "hook skipped: deadline"
+	}
+	if !response.OK {
+		return nil, "hook skipped: request failed"
+	}
+	pack, ok := response.Result.(session.Pack)
+	if !ok {
+		return nil, "hook skipped: request failed"
+	}
+	text := session.Render(pack.Entries)
 	if text == "" {
 		return nil, note
 	}
@@ -210,155 +227,6 @@ func sourceToken(source string) string {
 func eventID(kind, sessionID, body string) string {
 	sum := sha256.Sum256([]byte(kind + "\x00" + sessionID + "\x00" + body))
 	return "hook_" + hex.EncodeToString(sum[:])
-}
-
-func selectTerms(prompt string) []string {
-	prompt = norm.NFC.String(strings.ToLower(sanitize(prompt)))
-	var candidates []string
-	for _, field := range strings.Fields(prompt) {
-		if len(candidates) >= maxQueryTerms {
-			break
-		}
-		field = strings.TrimFunc(field, func(r rune) bool {
-			return unicode.IsPunct(r) || unicode.IsSymbol(r)
-		})
-		if field == "" {
-			continue
-		}
-		candidates = append(candidates, expandTerm(field)...)
-	}
-	if len(candidates) > maxQueryTerms {
-		candidates = candidates[:maxQueryTerms]
-	}
-	seen := map[string]bool{}
-	filtered := make([]string, 0, maxSearchTerms)
-	for _, term := range candidates {
-		if seen[term] || stopword(term) || utf8.RuneCountInString(term) < 2 {
-			continue
-		}
-		seen[term] = true
-		filtered = append(filtered, term)
-	}
-	sort.SliceStable(filtered, func(i, j int) bool {
-		return utf8.RuneCountInString(filtered[i]) > utf8.RuneCountInString(filtered[j])
-	})
-	if len(filtered) > maxSearchTerms {
-		filtered = filtered[:maxSearchTerms]
-	}
-	return filtered
-}
-
-func expandTerm(field string) []string {
-	runes := []rune(field)
-	if len(runes) == 0 {
-		return nil
-	}
-	if !containsNonASCII(field) {
-		if len(runes) > 24 {
-			return []string{string(runes[:24])}
-		}
-		return []string{field}
-	}
-	if len(runes) <= 8 {
-		return []string{field}
-	}
-	const width = 4
-	const count = 4
-	maxStart := len(runes) - width
-	seen := map[string]bool{}
-	out := make([]string, 0, count)
-	for i := 0; i < count; i++ {
-		start := maxStart * i / (count - 1)
-		term := string(runes[start : start+width])
-		if !seen[term] {
-			seen[term] = true
-			out = append(out, term)
-		}
-	}
-	return out
-}
-
-func containsNonASCII(value string) bool {
-	for _, r := range value {
-		if r > 127 {
-			return true
-		}
-	}
-	return false
-}
-
-func stopword(term string) bool {
-	_, ok := map[string]bool{
-		"a": true, "an": true, "the": true, "to": true, "of": true, "and": true, "or": true,
-		"for": true, "in": true, "on": true, "with": true, "is": true, "are": true, "was": true,
-		"were": true, "be": true, "at": true, "from": true, "about": true, "into": true, "over": true,
-		"what": true, "how": true, "when": true, "why": true, "where": true, "this": true, "that": true,
-		"please": true, "me": true, "my": true, "do": true, "does": true, "did": true, "can": true,
-		"you": true, "we": true, "it": true,
-	}[term]
-	return ok
-}
-
-func searchEntries(ctx context.Context, store *bundle.Bundle, visibility string, terms []string) ([]session.Entry, string) {
-	if ctx.Err() != nil {
-		return nil, "hook skipped: deadline"
-	}
-	line, err := json.Marshal(session.Request{Op: "search", Terms: terms, Limit: 10, Visibility: visibility})
-	if err != nil {
-		return nil, "hook skipped: request failed"
-	}
-	response := session.Handle(ctx, store, line)
-	if ctx.Err() != nil {
-		return nil, "hook skipped: deadline"
-	}
-	if !response.OK {
-		return nil, "hook skipped: request failed"
-	}
-	matches, ok := response.Result.([]bundle.Evidence)
-	if !ok {
-		return nil, "hook skipped: request failed"
-	}
-	entries := make([]session.Entry, 0, len(matches))
-	for _, match := range matches {
-		ref := session.Ref{
-			SourceID: match.Ref.SourceID, ItemID: match.Ref.ItemID, RecordHash: match.Ref.RecordHash,
-			StartLine: match.Ref.StartLine, EndLine: match.Ref.EndLine,
-		}
-		entries = append(entries, session.Entry{Role: "knowledge", Text: match.Text, Locator: match.Locator, Ref: &ref})
-	}
-	return entries, ""
-}
-
-func render(entries []session.Entry) string {
-	blocks := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		text := strings.TrimSpace(entry.Text)
-		if text == "" {
-			continue
-		}
-		var block strings.Builder
-		if entry.Locator != "" {
-			block.WriteString(entry.Locator)
-			if entry.Ref != nil && entry.Ref.StartLine > 0 {
-				block.WriteString("#L")
-				block.WriteString(strconv.Itoa(entry.Ref.StartLine))
-			}
-			block.WriteByte('\n')
-		}
-		block.WriteString(text)
-		blocks = append(blocks, block.String())
-	}
-	for len(blocks) > 0 && utf8.RuneCountInString(strings.Join(blocks, "\n\n")) > prepareBudget {
-		blocks = blocks[:len(blocks)-1]
-	}
-	if len(blocks) == 0 {
-		return ""
-	}
-	rendered := strings.Join(blocks, "\n\n")
-	if utf8.RuneCountInString(rendered) > prepareBudget {
-		return ""
-	}
-	return rendered
 }
 
 type injection struct {

@@ -209,3 +209,44 @@ func TestPrepareIncludesRelativeLocator(t *testing.T) {
 		t.Fatalf("entry: %+v", pack.Entries)
 	}
 }
+
+func TestPrepareTermsMatchEitherTerm(t *testing.T) {
+	dir := fixtureBundle(t)
+	b, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := json.Marshal(map[string]any{
+		"op": "prepare", "terms": []string{"rule", "missing-word"}, "budget": 2000, "visibility": "public",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared := Handle(context.Background(), b, line)
+	if !prepared.OK {
+		t.Fatalf("prepare: %+v", prepared)
+	}
+	pack := prepared.Result.(Pack)
+	if len(pack.Entries) != 1 || !strings.Contains(pack.Entries[0].Text, "shared rule") {
+		t.Fatalf("entries: %+v", pack.Entries)
+	}
+	rendered := Render(pack.Entries)
+	if !strings.Contains(rendered, "public.md#L") || utf8RuneCount(rendered) > 2000 {
+		t.Fatalf("render: %q", rendered)
+	}
+	both := Handle(context.Background(), b, []byte(`{"op":"prepare","query":"rule","terms":["rule"]}`))
+	if both.OK {
+		t.Fatalf("query and terms accepted: %+v", both)
+	}
+	anded := Handle(context.Background(), b, []byte(`{"op":"prepare","query":"rule missing-word","budget":2000,"visibility":"public"}`))
+	if !anded.OK {
+		t.Fatalf("and prepare: %+v", anded)
+	}
+	if len(anded.Result.(Pack).Entries) != 0 {
+		t.Fatalf("and entries: %+v", anded.Result)
+	}
+}
+
+func utf8RuneCount(value string) int {
+	return len([]rune(value))
+}
