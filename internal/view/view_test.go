@@ -127,3 +127,63 @@ func TestWriteRefusesSymlinkDirectoryAndBundlePath(t *testing.T) {
 		t.Fatalf("output: %s %v", written, err)
 	}
 }
+
+func TestWriteReplacesNameWithoutChangingBundleInode(t *testing.T) {
+	bundle := t.TempDir()
+	outside := t.TempDir()
+	page := Page{Generation: 3, Report: session.Report{Failures: []string{}}}
+	original := []byte("bundle-bytes")
+	source := filepath.Join(bundle, "memory.json")
+	if err := os.WriteFile(source, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(outside, "page.html")
+	if err := os.Link(source, output); err != nil {
+		t.Fatal(err)
+	}
+	if err := Write(bundle, output, page); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := os.ReadFile(source)
+	if err != nil || string(kept) != string(original) {
+		t.Fatalf("bundle file changed: %q %v", kept, err)
+	}
+	written, err := os.ReadFile(output)
+	if err != nil || !strings.Contains(string(written), "Generation 3.") {
+		t.Fatalf("output: %s %v", written, err)
+	}
+	sourceInfo, err := os.Stat(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputInfo, err := os.Stat(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(sourceInfo, outputInfo) {
+		t.Fatal("output still shares the bundle inode")
+	}
+
+	parent := filepath.Join(outside, "bundle-parent")
+	if err := os.Symlink(bundle, parent); err != nil {
+		t.Fatal(err)
+	}
+	if err := Write(bundle, filepath.Join(parent, "page.html"), page); err == nil || !strings.Contains(err.Error(), "outside the bundle") {
+		t.Fatalf("parent symlink: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(bundle, "page.html")); !os.IsNotExist(err) {
+		t.Fatalf("wrote through parent symlink: %v", err)
+	}
+
+	existing := filepath.Join(outside, "existing.html")
+	if err := os.WriteFile(existing, []byte("previous"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Write(bundle, existing, page); err != nil {
+		t.Fatal(err)
+	}
+	replaced, err := os.ReadFile(existing)
+	if err != nil || strings.Contains(string(replaced), "previous") || !strings.Contains(string(replaced), "Generation 3.") {
+		t.Fatalf("replaced: %s %v", replaced, err)
+	}
+}

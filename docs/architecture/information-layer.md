@@ -79,7 +79,7 @@ The prototype checks one software project handed between Codex and Claude Code. 
 
 `TestPrototypeHandoffKeepsCurrentConstraints` runs that sample: a changed document, a superseded decision, a changed working file, a duplicate event, and a rejected memory update. It prepares knowledge without memory, memory without a knowledge hit, and context composed from the refreshed document, the confirmed memory, and the task. The text injected by the hook is the stored delivery.
 
-`lc inspect` prints the stored report. `lc view --bundle DIR --output FILE` writes one self-contained HTML file and exits. The file is not a service, has no write controls, and does not change memory. It has four sections:
+`lc inspect` prints the stored report. `lc view --bundle DIR --output FILE` writes one self-contained HTML file and exits. The file is not a service, has no write controls, and does not change memory. The writer creates a new file in the destination directory and renames it into place. It refuses a symlink or non-regular path. Replacing a hard-linked name leaves the original file unchanged, including when that file is inside the bundle. It has four sections:
 
 1. Sources, shown by id, name, type, active state, and update time, with the stored task and stored read failures. Connected hosts, selected files, and collection failure are unknown.
 2. Stored delivery text, selected and emitted counts, and elapsed time when it was stored. Acknowledgement, use, the source version of each entry, and the omission reason are unknown.
