@@ -140,9 +140,6 @@ func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, st
 	if kind == "prompt" {
 		terms = session.PromptTerms(in.Prompt)
 	}
-	if len(terms) == 0 {
-		return nil, note
-	}
 	if ctx.Err() != nil {
 		return nil, "hook skipped: deadline"
 	}

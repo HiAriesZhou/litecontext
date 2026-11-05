@@ -474,3 +474,37 @@ func TestHookInjectsTheStoredTask(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionStartInjectsStoredTaskWithoutSearching(t *testing.T) {
+	dir := fixtureBundle(t)
+	store, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := json.Marshal(session.Request{
+		Op:   "checkpoint",
+		Task: &session.Task{Goal: "Ship the checkpoint"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved := session.Handle(context.Background(), store, line); !saved.OK {
+		t.Fatalf("checkpoint: %+v", saved)
+	}
+	stdout, note := Hook(context.Background(), dir, "", payload(t, map[string]any{
+		"hook_event_name": "SessionStart",
+		"session_id":      "sess-task-start",
+		"source":          "startup",
+	}))
+	if note != "" || !bytes.Contains(stdout, []byte("Goal: Ship the checkpoint")) || bytes.Contains(stdout, []byte("private.md")) || bytes.Contains(stdout, []byte("secret")) {
+		t.Fatalf("start note=%q stdout=%s", note, stdout)
+	}
+	stdout, note = Hook(context.Background(), dir, "", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "sess-task-start",
+		"prompt":          "the",
+	}))
+	if note != "" || !bytes.Contains(stdout, []byte("Goal: Ship the checkpoint")) || bytes.Contains(stdout, []byte("private.md")) {
+		t.Fatalf("prompt note=%q stdout=%s", note, stdout)
+	}
+}
