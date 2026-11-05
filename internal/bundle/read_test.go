@@ -245,3 +245,20 @@ func (c *cancelDuringScan) Err() error {
 	}
 	return nil
 }
+
+func TestSearchAnyMatchesEitherTermInOnePass(t *testing.T) {
+	b := newBundle(t)
+	source := t.TempDir()
+	writeFile(t, filepath.Join(source, "public.md"), "---\nvisibility: public\n---\n# Shared\n\nA shared rule.\n")
+	writeFile(t, filepath.Join(source, "private.md"), "# private-canary\n\nsecret constraint.\n")
+	if _, err := b.CollectMarkdown(context.Background(), source, "notes", testNow); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := b.SearchAny(context.Background(), []string{"rule", "missing-word"}, Scope{Visibility: "public"}, 10)
+	if err != nil || len(hits) != 1 || hits[0].Locator != "public.md" || strings.Contains(hits[0].Text, "secret") {
+		t.Fatalf("hits=%v err=%v", hits, err)
+	}
+	if _, err = b.SearchAny(context.Background(), []string{"rule", "rule"}, Scope{}, 10); err == nil {
+		t.Fatal("duplicate term accepted")
+	}
+}
