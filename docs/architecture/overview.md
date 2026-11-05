@@ -1,6 +1,6 @@
 # Architecture
 
-LiteContext is a local-first information layer with a file-based collection core and CLI. It runs without a daemon or network listener. Bundle storage supports macOS and Linux on local filesystems with atomic rename and advisory file locks.
+LiteContext is a local-first information layer with a file-based collection core and CLI. It runs without a daemon or network listener. Bundle storage is implemented for macOS and Linux, using atomic rename and file locks. The Windows build uses the same bundle format; its lock compiles and has not been run on Windows.
 
 ```text
 Selected Markdown files → read-only scanner → validated ContextItems → atomic bundle snapshot
@@ -12,7 +12,7 @@ A bundle v1 contains `bundle.json`, `HEAD`, `.lock`, and `snapshots/<digest>.jso
 
 A snapshot contains a generation, source records, current item pointers, retained item versions and optional visibility overrides. ContextItem v1 remains unchanged. An item version is identified by source ID, item ID and record hash. Its hash identifies normalized portable content; observation time is retained from the first observation of identical content.
 
-Each operation obtains an exclusive advisory lock with a two-second timeout. Writes compare the handle's expected generation with the current generation before changing anything. Stale handles must reopen and explicitly retry. Lock ownership ends when the process closes the file or exits; no PID-based stale-lock deletion is used.
+Each operation obtains an exclusive lock with a two-second timeout. On Unix the lock is advisory (`flock`). On Windows it is a mandatory `LockFileEx` byte-range lock. Readers and writers take the same lock. Writes compare the handle's expected generation with the current generation before changing anything. Stale handles must reopen and explicitly retry. Lock ownership ends when the process closes the file or exits; no PID-based stale-lock deletion is used.
 
 A commit writes and syncs a complete immutable snapshot, then atomically replaces `HEAD`. Readers see one complete generation. Abandoned snapshots and interrupted cleanup are removed under the same lock before further access. Historical item versions are retained inside the current snapshot; previous snapshot files are not a separate history API. Unchanged collection creates no new generation and preserves existing bytes.
 
