@@ -14,9 +14,9 @@ const (
 	maxPromptScan  = 64
 )
 
-// PromptTerms selects the retrieval terms for one natural-language prompt.
+// promptTerms selects the retrieval terms for one natural-language prompt.
 // Explicit prepare queries stay unchanged and are not passed through this function.
-func PromptTerms(prompt string) []string {
+func promptTerms(prompt string) []string {
 	prompt = norm.NFC.String(strings.ToLower(sanitizePrompt(prompt)))
 	var candidates []string
 	for _, field := range strings.Fields(prompt) {

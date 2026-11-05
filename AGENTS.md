@@ -11,7 +11,7 @@ LiteContext is a local-first information layer for Agent Context, Memory and Kno
 - MCP is stdio-only. Do not add a daemon, network listener or background lifecycle.
 - Keep temporary task state separate from durable memory.
 - Fail closed on unknown required rules, identity or capabilities.
-- Do not claim host installation or that a Windows agent hook has been observed. CI runs the Go suite on Windows. A memory is eligible for context only after confirmation. `lc serve` is session contract version 1 (`contracts/session/v1`). `lc host hook` maps one Codex or Claude Code event onto that contract and does not edit host configuration. `lc inspect` is a read-only report of stored task, memory, event, and delivery records. It is not the viewer and does not start a service. Windows locking is covered by the Windows CI suite.
+- Do not claim host installation or that a Windows agent hook has been observed. CI runs the Go suite on Windows. A memory is eligible for context only after confirmation. `lc serve` is session contract version 1 (`contracts/session/v1`). `prepare` selects terms from a raw prompt; host adapters do not. `lc host hook` maps one Codex or Claude Code event onto that contract and does not edit host configuration. `lc inspect` is a read-only report of stored task, memory, event, and delivery records. It is not the viewer and does not start a service. Windows locking is covered by the Windows CI suite.
 - `docs/architecture/information-layer.md` is the current architecture. The four-page viewer described there is not implemented.
 
 ## Commands

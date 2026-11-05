@@ -34,6 +34,7 @@ type Request struct {
 	Op         string         `json:"op" enum:"record,prepare,search,show,deliver,checkpoint,memory,inspect"`
 	Query      string         `json:"query,omitempty"`
 	Terms      []string       `json:"terms,omitempty"`
+	Prompt     string         `json:"prompt,omitempty"`
 	Limit      int            `json:"limit,omitempty"`
 	Budget     int            `json:"budget,omitempty"`
 	SourceID   string         `json:"sourceId,omitempty"`
@@ -169,6 +170,9 @@ func Handle(ctx context.Context, b *bundle.Bundle, line []byte) Response {
 }
 
 func dispatch(ctx context.Context, b *bundle.Bundle, request Request) (any, bool, error) {
+	if request.Prompt != "" && request.Op != "prepare" {
+		return nil, false, fmt.Errorf("invalid request")
+	}
 	switch request.Op {
 	case "search":
 		if len(request.Terms) > 0 {
@@ -266,6 +270,12 @@ func prepare(ctx context.Context, b *bundle.Bundle, request Request) (Pack, erro
 		seen[key] = true
 		resolved := fromEvidence(evidence.Ref)
 		candidates = append(candidates, Entry{Role: "pin", Text: evidence.Text, Ref: &resolved, Locator: evidence.Locator})
+	}
+	if request.Prompt != "" {
+		if strings.TrimSpace(request.Query) != "" || len(request.Terms) > 0 {
+			return Pack{}, fmt.Errorf("invalid request")
+		}
+		request.Terms = promptTerms(request.Prompt)
 	}
 	if strings.TrimSpace(request.Query) != "" && len(request.Terms) > 0 {
 		return Pack{}, fmt.Errorf("invalid request")

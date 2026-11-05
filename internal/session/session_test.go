@@ -214,6 +214,36 @@ func TestPrepareIncludesRelativeLocator(t *testing.T) {
 	}
 }
 
+func TestPreparePromptOwnsTermSelection(t *testing.T) {
+	dir := fixtureBundle(t)
+	b, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared := Handle(context.Background(), b, []byte(`{"version":1,"op":"prepare","prompt":"where is the rule?","budget":2000,"visibility":"public"}`))
+	if !prepared.OK {
+		t.Fatalf("prepare: %+v", prepared)
+	}
+	pack := prepared.Result.(Pack)
+	if len(pack.Entries) != 1 || !strings.Contains(pack.Entries[0].Text, "shared rule") {
+		t.Fatalf("entries: %+v", pack.Entries)
+	}
+	anded := Handle(context.Background(), b, []byte(`{"version":1,"op":"prepare","query":"where is the rule?","budget":2000,"visibility":"public"}`))
+	if !anded.OK || len(anded.Result.(Pack).Entries) != 0 {
+		t.Fatalf("query should not match the same prompt: %+v", anded.Result)
+	}
+	for _, line := range []string{
+		`{"version":1,"op":"prepare","prompt":"shared rule","query":"rule"}`,
+		`{"version":1,"op":"prepare","prompt":"shared rule","terms":["rule"]}`,
+		`{"version":1,"op":"search","prompt":"shared rule","query":"rule"}`,
+	} {
+		response := Handle(context.Background(), b, []byte(line))
+		if response.OK {
+			t.Fatalf("%s accepted: %+v", line, response)
+		}
+	}
+}
+
 func TestPrepareTermsMatchEitherTerm(t *testing.T) {
 	dir := fixtureBundle(t)
 	b, err := bundle.Open(dir)

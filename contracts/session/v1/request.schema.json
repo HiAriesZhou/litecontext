@@ -11,6 +11,7 @@
     "op": { "enum": ["record", "prepare", "search", "show", "deliver", "checkpoint", "memory", "inspect"] },
     "query": { "type": "string" },
     "terms": { "type": "array", "items": { "type": "string" } },
+    "prompt": { "type": "string" },
     "limit": { "type": "integer" },
     "budget": { "type": "integer" },
     "sourceId": { "type": "string" },

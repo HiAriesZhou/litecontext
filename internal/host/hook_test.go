@@ -322,7 +322,7 @@ func TestPromptInjectionMatchesPrepare(t *testing.T) {
 		t.Fatal(err)
 	}
 	line, err := json.Marshal(session.Request{
-		Version: session.ContractVersion, Op: "prepare", Terms: session.PromptTerms(prompt), Limit: 10, Budget: 2000,
+		Version: session.ContractVersion, Op: "prepare", Prompt: prompt, Limit: 10, Budget: 2000,
 	})
 	if err != nil {
 		t.Fatal(err)
