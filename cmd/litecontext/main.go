@@ -111,7 +111,7 @@ Usage:
   lc search QUERY --bundle DIR [--source SOURCE_ID,...] [--visibility public|team|private] [--limit N] [--json]
   lc visibility set ITEM_ID --source SOURCE_ID --visibility private|team|public|inherit --bundle DIR [--json]
   lc serve --bundle DIR [--once]
-  lc host hook --bundle DIR [--visibility public|team|private]
+  lc host hook --bundle DIR [--host codex|claude|gemini] [--visibility public|team|private]
   lc inspect --bundle DIR [--json]
   lc view --bundle DIR --output FILE
 
