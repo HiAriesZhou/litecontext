@@ -12,6 +12,7 @@ LiteContext is a local-first information layer for Agent Context, Memory and Kno
 - Keep temporary task state separate from durable memory.
 - Fail closed on unknown required rules, identity or capabilities.
 - Do not claim unimplemented Memory, retrieval or host integration features exist.
+- `docs/architecture/information-layer.md` is the target shape, not implemented behavior.
 
 ## Commands
 

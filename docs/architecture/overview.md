@@ -48,7 +48,7 @@ A user visibility override survives collection. `inherit` removes it. Historical
 
 ## Information boundaries
 
-Knowledge represents retrievable source material. Memory represents scoped durable conclusions with evidence and correction history. Task state represents temporary goals, progress and checks. Context selects information for a task. Memory, task-state persistence, context delivery and host integration are not implemented yet.
+Knowledge represents retrievable source material. Memory represents scoped durable conclusions with evidence and correction history. Task state represents temporary goals, progress and checks. Context selects information for a task. The target boundaries, technology choices, and prototype are in [Information layer](information-layer.md). Memory, task-state persistence, context delivery and host integration are not implemented yet.
 
 CLI, stdio MCP and host adapters must share one core. A management interface must not create a second authoritative store. Source content remains data, not executable instructions or authorization.
 

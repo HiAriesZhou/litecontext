@@ -33,13 +33,14 @@ The bundle destination must be absent or empty. Reuse the same source name to re
 - `internal/ingest/` — read-only Markdown scanning.
 - `contracts/context-model/v1/` — portable record schemas.
 - `contracts/bundle/v1/` — bundle manifest and snapshot schemas.
-- `docs/` — current architecture and contributor instructions.
+- `docs/architecture/overview.md` — implemented storage and collection.
+- `docs/architecture/information-layer.md` — target capability boundaries; not implemented beyond the evidence core.
 
 For batch import, first allocate a source with `lc source add NAME --bundle DIR --json`, then pass the returned source ID to `lc import BATCH.json --source SOURCE_ID --bundle DIR --json`. Batches follow [ContextItemBatch v1](contracts/context-model/v1/context-item-batch.schema.json).
 
 For an exact result, use `lc item show ITEM_ID --source SOURCE_ID --record-hash HASH --bundle DIR --json`. Use `lc visibility set ITEM_ID --source SOURCE_ID --visibility private|team|public|inherit --bundle DIR` to manage overrides. `lc source disconnect SOURCE_ID --bundle DIR` stops reads; `lc source purge SOURCE_ID --bundle DIR` deletes all collected versions for that source. Purge leaves the original files in place.
 
-See [Architecture](docs/architecture/overview.md) and [Contributing](CONTRIBUTING.md).
+See [Architecture](docs/architecture/overview.md), [Information layer](docs/architecture/information-layer.md), and [Contributing](CONTRIBUTING.md).
 
 ## Development
 
