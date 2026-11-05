@@ -220,3 +220,71 @@ func TestServeOnceCommandRecordsAnEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestHostHookCommandInjectsACitation(t *testing.T) {
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "public.md"), []byte("---\nvisibility: public\n---\n# Shared\n\nA shared rule.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "bundle")
+	captureStdout(t, func() error { return run([]string{"bundle", "init", dir, "--json"}) })
+	captureStdout(t, func() error {
+		return run([]string{"collect", "markdown", source, "--bundle", dir, "--name", "notes", "--json"})
+	})
+	if err := run([]string{"host", "hook"}); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("usage: %v", err)
+	}
+	if err := run([]string{"host", "hook", "--bundle", dir, "--visibility", "secret"}); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("visibility: %v", err)
+	}
+	raw, _ := json.Marshal(map[string]string{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "cli-sess",
+		"cwd":             "DEVICE_CWD_SENTINEL",
+		"prompt":          "shared rule",
+	})
+	output := withStdin(t, string(raw), func() error {
+		return run([]string{"host", "hook", "--bundle", dir})
+	})
+	if !strings.Contains(output, `"hookEventName":"UserPromptSubmit"`) || !strings.Contains(output, "public.md#L") || strings.Contains(output, "DEVICE_CWD_SENTINEL") {
+		t.Fatalf("hook output: %s", output)
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "events"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := ""
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "hook_") {
+			raw, err = os.ReadFile(filepath.Join(dir, "events", entry.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			body += string(raw)
+		}
+	}
+	if strings.Contains(body, "DEVICE_CWD_SENTINEL") || !strings.Contains(body, "shared rule") {
+		t.Fatalf("stored event: %s", body)
+	}
+}
+
+func withStdin(t *testing.T, payload string, operation func() error) string {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = writer.WriteString(payload); err != nil {
+		t.Fatal(err)
+	}
+	if err = writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	previous := os.Stdin
+	os.Stdin = reader
+	t.Cleanup(func() {
+		os.Stdin = previous
+		reader.Close()
+	})
+	return captureStdout(t, operation)
+}

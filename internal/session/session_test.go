@@ -193,3 +193,19 @@ func TestOnceWritesOneResponse(t *testing.T) {
 		t.Fatalf("output: %s", output.String())
 	}
 }
+
+func TestPrepareIncludesRelativeLocator(t *testing.T) {
+	dir := fixtureBundle(t)
+	b, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared := Handle(context.Background(), b, []byte(`{"op":"prepare","query":"shared rule","budget":2000,"visibility":"public"}`))
+	if !prepared.OK {
+		t.Fatalf("prepare: %+v", prepared)
+	}
+	pack := prepared.Result.(Pack)
+	if len(pack.Entries) != 1 || pack.Entries[0].Locator != "public.md" || pack.Entries[0].Ref == nil || pack.Entries[0].Ref.StartLine < 1 {
+		t.Fatalf("entry: %+v", pack.Entries)
+	}
+}

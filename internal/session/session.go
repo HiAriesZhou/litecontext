@@ -80,9 +80,10 @@ type Pack struct {
 }
 
 type Entry struct {
-	Role string `json:"role"`
-	Text string `json:"text"`
-	Ref  *Ref   `json:"ref,omitempty"`
+	Role    string `json:"role"`
+	Text    string `json:"text"`
+	Ref     *Ref   `json:"ref,omitempty"`
+	Locator string `json:"locator,omitempty"`
 }
 
 type Omission struct {
@@ -210,7 +211,7 @@ func prepare(ctx context.Context, b *bundle.Bundle, request Request) (Pack, erro
 		}
 		seen[key] = true
 		resolved := fromEvidence(evidence.Ref)
-		candidates = append(candidates, Entry{Role: "pin", Text: evidence.Text, Ref: &resolved})
+		candidates = append(candidates, Entry{Role: "pin", Text: evidence.Text, Ref: &resolved, Locator: evidence.Locator})
 	}
 	if strings.TrimSpace(request.Query) != "" {
 		hits, err := b.Search(ctx, request.Query, scope(request), limit(request.Limit, 10, 20))
@@ -224,7 +225,7 @@ func prepare(ctx context.Context, b *bundle.Bundle, request Request) (Pack, erro
 			}
 			seen[key] = true
 			resolved := fromEvidence(hit.Ref)
-			candidates = append(candidates, Entry{Role: "knowledge", Text: hit.Text, Ref: &resolved})
+			candidates = append(candidates, Entry{Role: "knowledge", Text: hit.Text, Ref: &resolved, Locator: hit.Locator})
 		}
 	}
 	used := 0

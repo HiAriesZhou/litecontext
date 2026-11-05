@@ -6,7 +6,7 @@ LiteContext keeps source files in place and uses inspectable, portable files wit
 
 ## Status
 
-Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. `lc serve` exposes those reads, plus append-only session events and a bounded context pack, over newline-delimited JSON. Memory activation and host adapters are not implemented yet. Windows file locking compiles into the native binary, but it has not been run on Windows.
+Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. `lc serve` exposes those reads, plus append-only session events and a bounded context pack, over newline-delimited JSON. `lc host hook` maps one Codex or Claude Code hook event onto that contract and does not install host configuration. Memory activation is not implemented yet. Windows file locking compiles into the native binary, but it has not been run on Windows.
 
 ## Quick start
 
@@ -23,7 +23,12 @@ go build -o ./bin/lc ./cmd/litecontext
 ./bin/lc serve --bundle /path/to/new-bundle --once <<'JSON'
 {"op":"prepare","query":"project rule","budget":2000}
 JSON
+./bin/lc host hook --bundle /path/to/new-bundle <<'JSON'
+{"hook_event_name":"UserPromptSubmit","session_id":"example","prompt":"project rule"}
+JSON
 ```
+
+`lc host hook` gives a prompt 200ms and any other event one second. When the bundle or the deadline fails, it writes nothing to stdout and exits 0.
 
 The bundle destination must be absent or empty. Reuse the same source name to refresh its snapshot. Source files are read only. Keep bundles outside source repositories when possible: they contain collected content and should not be committed.
 
