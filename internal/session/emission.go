@@ -23,8 +23,8 @@ type Emission struct {
 	Text         string `json:"text"`
 	Selected     int    `json:"selected"`
 	Emitted      int    `json:"emitted"`
-	Acknowledged string `json:"acknowledged"`
-	Used         string `json:"used"`
+	Acknowledged string `json:"acknowledged" enum:"unknown"`
+	Used         string `json:"used" enum:"unknown"`
 	ElapsedMs    *int   `json:"elapsedMs,omitempty"`
 }
 

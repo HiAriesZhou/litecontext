@@ -12,6 +12,7 @@ import (
 func TestContractSchemasMatchGoTypes(t *testing.T) {
 	checkSchema(t, Request{}, "request.schema.json")
 	checkSchema(t, Response{}, "response.schema.json")
+	checkSchema(t, Report{}, "inspect-report.schema.json")
 }
 
 func checkSchema(t *testing.T, value any, name string) {
