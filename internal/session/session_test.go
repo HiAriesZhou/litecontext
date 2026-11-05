@@ -278,10 +278,8 @@ func TestSaveEmissionReplacesText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, entry := range entries {
-		if entry.Name() != "delivery" {
-			t.Fatalf("delivery created an event: %s", entry.Name())
-		}
+	if names := eventNames(entries); len(names) != 1 || names[0] != "delivery" {
+		t.Fatalf("delivery created an event: %v", names)
 	}
 }
 
@@ -329,8 +327,8 @@ func TestDeliverRecordsThroughTheSessionContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Name() != "delivery" {
-		t.Fatalf("events: %v", entries)
+	if names := eventNames(entries); len(names) != 1 || names[0] != "delivery" {
+		t.Fatalf("events: %v", names)
 	}
 }
 
@@ -576,4 +574,15 @@ func TestInspectSeparatesCurrentMemoryAndDelivery(t *testing.T) {
 		t.Fatalf("inspect op: %+v", response)
 	}
 	_ = body
+}
+
+func eventNames(entries []os.DirEntry) []string {
+	names := []string{}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	return names
 }
