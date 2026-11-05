@@ -628,12 +628,13 @@ func TestLockCancellationDoesNotRemoveOtherWriterData(t *testing.T) {
 }
 
 func TestRehashedSnapshotRejectsSchemaViolations(t *testing.T) {
-	for _, mutate := range []func(string) string{
+	for index, mutate := range []func(string) string{
 		func(s string) string { return strings.Replace(s, `"versions":`, `"visibility":"","versions":`, 1) },
 		func(s string) string {
 			return strings.Replace(s, `"attributes":{`, `"attributes":{"visibility":"",`, 1)
 		},
 		func(s string) string { return strings.Replace(s, `"body":`, `"unknownBody":`, 1) },
+		func(s string) string { return strings.Replace(s, "Stable text.", "Stable text!", 1) },
 	} {
 		b, source := newBundleAndSource(t)
 		if _, err := b.CollectMarkdown(context.Background(), source, "notes", testNow); err != nil {
@@ -670,7 +671,7 @@ func TestRehashedSnapshotRejectsSchemaViolations(t *testing.T) {
 		}
 		r.Close()
 		if _, err = Open(b.Dir()); err == nil {
-			t.Fatal("invalid rehashed snapshot accepted")
+			t.Fatalf("invalid rehashed snapshot %d accepted", index)
 		}
 	}
 }
