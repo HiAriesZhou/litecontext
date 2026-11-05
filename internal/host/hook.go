@@ -300,60 +300,31 @@ func stopword(term string) bool {
 }
 
 func searchEntries(ctx context.Context, store *bundle.Bundle, visibility string, terms []string) ([]session.Entry, string) {
-	type hit struct {
-		entry  session.Entry
-		score  int
-		itemID string
+	if ctx.Err() != nil {
+		return nil, "hook skipped: deadline"
 	}
-	found := map[string]*hit{}
-	for _, term := range terms {
-		if ctx.Err() != nil {
-			return nil, "hook skipped: deadline"
-		}
-		line, err := json.Marshal(session.Request{Op: "search", Query: term, Limit: 5, Visibility: visibility})
-		if err != nil {
-			return nil, "hook skipped: request failed"
-		}
-		response := session.Handle(ctx, store, line)
-		if ctx.Err() != nil {
-			return nil, "hook skipped: deadline"
-		}
-		if !response.OK {
-			return nil, "hook skipped: request failed"
-		}
-		matches, ok := response.Result.([]bundle.Evidence)
-		if !ok {
-			return nil, "hook skipped: request failed"
-		}
-		for _, match := range matches {
-			key := match.Ref.SourceID + "\x00" + match.Ref.ItemID + "\x00" + match.Ref.RecordHash
-			if existing := found[key]; existing != nil {
-				existing.score++
-				continue
-			}
-			ref := session.Ref{
-				SourceID: match.Ref.SourceID, ItemID: match.Ref.ItemID, RecordHash: match.Ref.RecordHash,
-				StartLine: match.Ref.StartLine, EndLine: match.Ref.EndLine,
-			}
-			found[key] = &hit{
-				score: 1, itemID: match.Ref.ItemID,
-				entry: session.Entry{Role: "knowledge", Text: match.Text, Locator: match.Locator, Ref: &ref},
-			}
-		}
+	line, err := json.Marshal(session.Request{Op: "search", Terms: terms, Limit: 10, Visibility: visibility})
+	if err != nil {
+		return nil, "hook skipped: request failed"
 	}
-	ordered := make([]*hit, 0, len(found))
-	for _, item := range found {
-		ordered = append(ordered, item)
+	response := session.Handle(ctx, store, line)
+	if ctx.Err() != nil {
+		return nil, "hook skipped: deadline"
 	}
-	sort.Slice(ordered, func(i, j int) bool {
-		if ordered[i].score != ordered[j].score {
-			return ordered[i].score > ordered[j].score
+	if !response.OK {
+		return nil, "hook skipped: request failed"
+	}
+	matches, ok := response.Result.([]bundle.Evidence)
+	if !ok {
+		return nil, "hook skipped: request failed"
+	}
+	entries := make([]session.Entry, 0, len(matches))
+	for _, match := range matches {
+		ref := session.Ref{
+			SourceID: match.Ref.SourceID, ItemID: match.Ref.ItemID, RecordHash: match.Ref.RecordHash,
+			StartLine: match.Ref.StartLine, EndLine: match.Ref.EndLine,
 		}
-		return ordered[i].itemID < ordered[j].itemID
-	})
-	entries := make([]session.Entry, len(ordered))
-	for i, item := range ordered {
-		entries[i] = item.entry
+		entries = append(entries, session.Entry{Role: "knowledge", Text: match.Text, Locator: match.Locator, Ref: &ref})
 	}
 	return entries, ""
 }

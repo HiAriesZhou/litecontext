@@ -31,6 +31,7 @@ const (
 type Request struct {
 	Op         string   `json:"op" enum:"record,prepare,search,show"`
 	Query      string   `json:"query,omitempty"`
+	Terms      []string `json:"terms,omitempty"`
 	Limit      int      `json:"limit,omitempty"`
 	Budget     int      `json:"budget,omitempty"`
 	SourceID   string   `json:"sourceId,omitempty"`
@@ -148,6 +149,13 @@ func Handle(ctx context.Context, b *bundle.Bundle, line []byte) Response {
 func dispatch(ctx context.Context, b *bundle.Bundle, request Request) (any, bool, error) {
 	switch request.Op {
 	case "search":
+		if len(request.Terms) > 0 {
+			if strings.TrimSpace(request.Query) != "" {
+				return nil, false, fmt.Errorf("invalid request")
+			}
+			result, err := b.SearchAny(ctx, request.Terms, scope(request), limit(request.Limit, 10, 100))
+			return result, false, err
+		}
 		result, err := b.Search(ctx, request.Query, scope(request), limit(request.Limit, 10, 100))
 		return result, false, err
 	case "show":

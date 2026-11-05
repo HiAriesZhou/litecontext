@@ -307,3 +307,103 @@ func (b *Bundle) Search(ctx context.Context, query string, scope Scope, limit in
 	}
 	return result, nil
 }
+
+// SearchAny returns current records that contain any term. It reads the
+// snapshot once. Score is the number of terms found; item ID breaks ties.
+func (b *Bundle) SearchAny(ctx context.Context, terms []string, scope Scope, limit int) ([]Evidence, error) {
+	if err := validScope(scope); err != nil {
+		return nil, err
+	}
+	if len(terms) < 1 || len(terms) > 8 || limit < 1 || limit > 100 {
+		return nil, fmt.Errorf("invalid search query or limit")
+	}
+	normalized := make([]string, 0, len(terms))
+	seen := map[string]bool{}
+	for _, term := range terms {
+		term = strings.ToLower(norm.NFC.String(strings.TrimSpace(term)))
+		if term == "" || len(term) > 4096 || seen[term] {
+			return nil, fmt.Errorf("invalid search query")
+		}
+		for _, r := range term {
+			if unicode.IsControl(r) || unicode.IsSpace(r) {
+				return nil, fmt.Errorf("invalid search query")
+			}
+		}
+		seen[term] = true
+		normalized = append(normalized, term)
+	}
+	type hit struct {
+		value Evidence
+		score int
+	}
+	hits := []hit{}
+	err := b.access(ctx, false, func(s *snapshot) error {
+		for _, entry := range s.Items {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if !inScope(entry.SourceID, s, scope) || entry.Current == "" {
+				continue
+			}
+			if scope.Visibility != "" && effectiveVisibility(entry, entry.Current) != scope.Visibility {
+				continue
+			}
+			item := entry.Versions[entry.Current]
+			title := strings.ToLower(item.Content.Title)
+			body := strings.ToLower(item.Content.Body)
+			tags := strings.ToLower(strings.Join(item.Attributes.Tags, " "))
+			combined := title + "\n" + body + "\n" + tags
+			score := 0
+			for _, term := range normalized {
+				if strings.Contains(combined, term) {
+					score++
+				}
+			}
+			if score == 0 {
+				continue
+			}
+			lineNumber := 1
+			for i, line := range strings.Split(body, "\n") {
+				found := false
+				for _, term := range normalized {
+					if strings.Contains(line, term) {
+						found = true
+						break
+					}
+				}
+				if found {
+					lineNumber = i + 1
+					break
+				}
+			}
+			value, err := evidence(entry, entry.Current, lineNumber, lineNumber)
+			if err != nil {
+				return err
+			}
+			runes := []rune(value.Text)
+			if len(runes) > 512 {
+				value.Text = string(runes[:512])
+				value.Truncated = true
+			}
+			hits = append(hits, hit{value: value, score: score})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(hits, func(i, j int) bool {
+		if hits[i].score != hits[j].score {
+			return hits[i].score > hits[j].score
+		}
+		return hits[i].value.Ref.ItemID < hits[j].value.Ref.ItemID
+	})
+	if len(hits) > limit {
+		hits = hits[:limit]
+	}
+	result := make([]Evidence, 0, len(hits))
+	for _, h := range hits {
+		result = append(result, h.value)
+	}
+	return result, nil
+}
