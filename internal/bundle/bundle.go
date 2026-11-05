@@ -10,10 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/HiAriesZhou/litecontext/internal/contextmodel"
@@ -61,6 +63,12 @@ type Bundle struct {
 	dir        string
 	expected   atomic.Uint64
 	commitHook func(string) error
+
+	mu              sync.Mutex
+	cachedHash      string
+	cachedCanonical []byte
+	cachedSnap      snapshot
+	snapshotLoads   int
 }
 
 func (b *Bundle) Dir() string { return b.dir }
@@ -148,9 +156,26 @@ func (b *Bundle) access(ctx context.Context, write bool, fn func(*snapshot) erro
 	if err = realDirectory(r, "snapshots"); err != nil {
 		return err
 	}
-	s, live, err := loadSnapshot(r, m)
+	hash, err := currentSnapshotHash(r)
 	if err != nil {
 		return err
+	}
+	live := snapshotFile(hash)
+	var s snapshot
+	var before []byte
+	if cached, canonical, ok := b.cachedSnapshot(hash); ok {
+		s = cached
+		before = canonical
+	} else {
+		s, live, err = loadSnapshot(r, m)
+		if err != nil {
+			return err
+		}
+		before, err = encodeCanonical(s)
+		if err != nil {
+			return err
+		}
+		b.storeSnapshot(hash, before, s, true)
 	}
 	// Only the current snapshot is authoritative. Older files are abandoned commits,
 	// including interrupted purge cleanup, and are removed while the lock is held.
@@ -159,10 +184,6 @@ func (b *Bundle) access(ctx context.Context, write bool, fn func(*snapshot) erro
 	}
 	if write && s.Generation != b.expected.Load() {
 		return ErrConflict
-	}
-	before, err := encodeCanonical(s)
-	if err != nil {
-		return err
 	}
 	if err = fn(&s); err != nil {
 		return err
@@ -190,8 +211,71 @@ func (b *Bundle) access(ctx context.Context, write bool, fn func(*snapshot) erro
 	if err = saveSnapshot(r, s, b.commitHook); err != nil {
 		return err
 	}
+	final, err := encodeCanonical(s)
+	if err != nil {
+		return err
+	}
+	b.storeSnapshot(digest(final), final, s, false)
 	b.expected.Store(s.Generation)
 	return nil
+}
+func (b *Bundle) cachedSnapshot(hash string) (snapshot, []byte, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if hash == "" || hash != b.cachedHash {
+		return snapshot{}, nil, false
+	}
+	return cloneSnapshot(b.cachedSnap), append([]byte(nil), b.cachedCanonical...), true
+}
+func (b *Bundle) storeSnapshot(hash string, canonical []byte, s snapshot, fromDisk bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if fromDisk {
+		b.snapshotLoads++
+	}
+	b.cachedHash = hash
+	b.cachedCanonical = append([]byte(nil), canonical...)
+	b.cachedSnap = cloneSnapshot(s)
+}
+func cloneSnapshot(s snapshot) snapshot {
+	out := s
+	out.Sources = make(map[string]sourceState, len(s.Sources))
+	for id, source := range s.Sources {
+		if source.Record.Extensions != nil {
+			source.Record.Extensions = maps.Clone(source.Record.Extensions)
+		}
+		out.Sources[id] = source
+	}
+	out.Items = make(map[string]itemState, len(s.Items))
+	for id, entry := range s.Items {
+		versions := make(map[string]contextmodel.CanonicalContextItem, len(entry.Versions))
+		for hash, item := range entry.Versions {
+			if item.Attributes.Tags != nil {
+				item.Attributes.Tags = append([]string(nil), item.Attributes.Tags...)
+			}
+			if item.Extensions != nil {
+				item.Extensions = maps.Clone(item.Extensions)
+			}
+			versions[hash] = item
+		}
+		entry.Versions = versions
+		out.Items[id] = entry
+	}
+	return out
+}
+func currentSnapshotHash(r *os.Root) (string, error) {
+	var h head
+	data, err := readRegular(r, "HEAD", 256)
+	if err != nil {
+		return "", err
+	}
+	if strictjson.Decode(data, &h) != nil || !hashPattern.MatchString(h.Snapshot) {
+		return "", fmt.Errorf("invalid bundle HEAD")
+	}
+	return h.Snapshot, nil
+}
+func snapshotFile(hash string) string {
+	return "snapshots/" + strings.TrimPrefix(hash, "sha256:") + ".json"
 }
 func readManifest(r *os.Root) (Manifest, error) {
 	var m Manifest
@@ -217,7 +301,7 @@ func loadSnapshot(r *os.Root, m Manifest) (snapshot, string, error) {
 	if strictjson.Decode(data, &h) != nil || !hashPattern.MatchString(h.Snapshot) {
 		return s, "", fmt.Errorf("invalid bundle HEAD")
 	}
-	name := "snapshots/" + strings.TrimPrefix(h.Snapshot, "sha256:") + ".json"
+	name := snapshotFile(h.Snapshot)
 	data, err = readRegular(r, name, maximumSnapshotBytes)
 	if err != nil {
 		return s, "", err
