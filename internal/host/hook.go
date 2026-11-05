@@ -219,6 +219,12 @@ func selectTerms(prompt string) []string {
 		if len(candidates) >= maxQueryTerms {
 			break
 		}
+		field = strings.TrimFunc(field, func(r rune) bool {
+			return unicode.IsPunct(r) || unicode.IsSymbol(r)
+		})
+		if field == "" {
+			continue
+		}
 		candidates = append(candidates, expandTerm(field)...)
 	}
 	if len(candidates) > maxQueryTerms {
