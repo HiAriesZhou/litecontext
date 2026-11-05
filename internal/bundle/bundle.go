@@ -266,11 +266,11 @@ func (b *Bundle) readSnapshot(ctx context.Context, fn func(string, *snapshot) er
 	if err = cleanSnapshots(r, live); err != nil {
 		return err
 	}
-	if cached, _, ok := b.cachedSnapshot(hash); ok {
+	if view, ok := b.cachedView(hash); ok {
 		release()
 		locked = false
 		b.notifyReadUnlocked()
-		return fn(hash, &cached)
+		return fn(hash, &view)
 	}
 	data, err := readRegular(r, live, maximumSnapshotBytes)
 	if err != nil {
@@ -302,6 +302,18 @@ func (b *Bundle) notifyReadUnlocked() {
 	if b.afterReadLock != nil {
 		b.afterReadLock()
 	}
+}
+
+// cachedView is a shallow copy for a read-only callback.
+// It shares the cached maps. The callback must not modify them.
+// A writer uses cachedSnapshot, which copies those maps first.
+func (b *Bundle) cachedView(hash string) (snapshot, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if hash == "" || hash != b.cachedHash {
+		return snapshot{}, false
+	}
+	return b.cachedSnap, true
 }
 
 func (b *Bundle) cachedSnapshot(hash string) (snapshot, []byte, bool) {
