@@ -101,6 +101,50 @@ func compareStruct(t *testing.T, typ reflect.Type, schema map[string]any, defs m
 	}
 }
 
+func TestRequestSchemaKeepsPromptExclusive(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "contracts", "session", "v1", "request.schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema map[string]any
+	if err = json.Unmarshal(data, &schema); err != nil {
+		t.Fatal(err)
+	}
+	clauses, ok := schema["allOf"].([]any)
+	if !ok || len(clauses) != 1 {
+		t.Fatalf("allOf: %#v", schema["allOf"])
+	}
+	clause, ok := clauses[0].(map[string]any)
+	if !ok {
+		t.Fatalf("clause: %#v", clauses[0])
+	}
+	condition, ok := clause["if"].(map[string]any)
+	if !ok || !containsString(condition["required"], "prompt") {
+		t.Fatalf("if: %#v", clause["if"])
+	}
+	prompt, _ := condition["properties"].(map[string]any)["prompt"].(map[string]any)
+	if prompt["minLength"] != float64(1) {
+		t.Fatalf("prompt condition: %#v", prompt)
+	}
+	accepted, ok := clause["then"].(map[string]any)["properties"].(map[string]any)
+	if !ok || accepted["op"].(map[string]any)["const"] != "prepare" || accepted["query"].(map[string]any)["const"] != "" || accepted["terms"].(map[string]any)["maxItems"] != float64(0) {
+		t.Fatalf("then: %#v", clause["then"])
+	}
+}
+
+func containsString(value any, want string) bool {
+	items, ok := value.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
 func enumsAgree(tag string, prop map[string]any) error {
 	raw, has := prop["enum"].([]any)
 	if (tag == "") == has {
