@@ -4,7 +4,6 @@ package ingest
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,35 +19,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var ErrNativeGrantAuthorizationRequired = errors.New("native source authorization is required")
-
-var ErrNativeGrantScanBudgetExceeded = errors.New("native source scan exceeds its resource budget")
-
 var openGrantedDirectoryAt = openGrantedDirectory
-
-const (
-	maximumGrantedSourceDepth   = 64
-	maximumGrantedSourceEntries = 200_000
-)
-
-type grantedMarkdownFile struct {
-	relative string
-	contents []byte
-}
-
-type grantedScanBudget struct {
-	maxDepth     int
-	maxEntries   int
-	maxFiles     int
-	maxBytes     int64
-	files        int
-	bytes        int64
-	entries      int
-	warnings     int
-	maxWarnings  int
-	payloadBytes int
-	maxPayload   int
-}
 
 // ScanGrantedMarkdown normalizes a macOS/Linux directory grant without ever
 // reconstructing or serializing its host path. The caller retains ownership of
@@ -95,27 +66,6 @@ func ScanGrantedMarkdown(ctx context.Context, grant *os.File, source contextmode
 		}
 	}
 	return result, nil
-}
-
-func appendGrantedItem(budget *grantedScanBudget, result *ScanResult, item contextmodel.ContextItem) error {
-	encoded, err := json.Marshal(item)
-	if err != nil {
-		return fmt.Errorf("encode normalized granted ContextItem: %w", err)
-	}
-	// Include array brackets plus one separator per item. This bounds the same
-	// JSON item array that ChangeBatch validates, before retaining another item.
-	additional := len(encoded)
-	if len(result.Items) == 0 {
-		additional += 2
-	} else {
-		additional++
-	}
-	if additional > budget.maxPayload-budget.payloadBytes {
-		return ErrNativeGrantScanBudgetExceeded
-	}
-	budget.payloadBytes += additional
-	result.Items = append(result.Items, item)
-	return nil
 }
 
 func collectGrantedMarkdownFiles(ctx context.Context, directory *os.File, prefix string, matcher *ignore.GitIgnore, root bool, depth int, budget *grantedScanBudget) ([]grantedMarkdownFile, []SkippedFile, error) {
@@ -210,18 +160,6 @@ func collectGrantedMarkdownFiles(ctx context.Context, directory *os.File, prefix
 	return files, skipped, nil
 }
 
-func appendGrantedSkipped(budget *grantedScanBudget, skipped *[]SkippedFile, value SkippedFile) error {
-	if len(value.Path)+len(value.Reason) > maximumDriverWarningSize {
-		return ErrNativeGrantScanBudgetExceeded
-	}
-	if budget.warnings >= budget.maxWarnings {
-		return ErrNativeGrantScanBudgetExceeded
-	}
-	budget.warnings++
-	*skipped = append(*skipped, value)
-	return nil
-}
-
 func openGrantedDirectory(parentFD int, name string) (*os.File, error) {
 	fd, err := unix.Openat(parentFD, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -284,13 +222,4 @@ func grantedIgnoreMatcher(root *os.File) (*ignore.GitIgnore, error) {
 		return nil, errors.New("read .litecontextignore from native source grant")
 	}
 	return ignore.CompileIgnoreLines(strings.Split(string(contents), "\n")...), nil
-}
-
-func isGrantedMarkdownFile(name string) bool {
-	switch strings.ToLower(path.Ext(name)) {
-	case ".md", ".markdown", ".txt":
-		return true
-	default:
-		return false
-	}
 }
