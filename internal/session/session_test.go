@@ -90,6 +90,43 @@ func TestSessionSearchShowRecordAndPrepare(t *testing.T) {
 	}
 }
 
+func TestRecordReplaySurvivesJSONEscaping(t *testing.T) {
+	dir := fixtureBundle(t)
+	b, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := strings.Repeat("\"", 20000)
+	line, err := json.Marshal(map[string]any{
+		"op":    "record",
+		"event": map[string]string{"id": "escaped", "kind": "note", "body": body},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := Handle(context.Background(), b, line)
+	second := Handle(context.Background(), b, line)
+	if !first.OK || !second.OK || !second.Replay {
+		t.Fatalf("first=%+v second=%+v", first, second)
+	}
+	eventPath := filepath.Join(dir, "events", "escaped.json")
+	file, err := os.OpenFile(eventPath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = file.Write([]byte(" ")); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err = file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	longer := Handle(context.Background(), b, line)
+	if longer.OK || !strings.Contains(longer.Error, "different content") {
+		t.Fatalf("longer: %+v", longer)
+	}
+}
+
 func TestSessionRejectsClosedContractViolations(t *testing.T) {
 	dir := fixtureBundle(t)
 	b, err := bundle.Open(dir)
