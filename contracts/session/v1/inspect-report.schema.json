@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litecontext.dev/contracts/session/v1/inspect-report.schema.json",
+  "title": "LiteContext inspect report",
+  "description": "The result of a version 1 inspect operation. Generation labels the source list read from one snapshot.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generation", "sources", "currentMemories", "memories", "events", "deliveries", "failures"],
+  "properties": {
+    "generation": { "type": "integer", "minimum": 0 },
+    "sources": { "type": "array", "items": { "$ref": "#/$defs/source" } },
+    "task": { "$ref": "#/$defs/task" },
+    "currentMemories": { "type": "array", "items": { "$ref": "#/$defs/memory" } },
+    "memories": { "type": "array", "items": { "$ref": "#/$defs/memory" } },
+    "events": { "type": "array", "items": { "$ref": "#/$defs/event" } },
+    "deliveries": { "type": "array", "items": { "$ref": "#/$defs/delivery" } },
+    "failures": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "type", "updatedAt", "active"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "active": { "type": "boolean" }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "goal": { "type": "string" },
+        "progress": { "type": "string" },
+        "checks": { "type": "string" },
+        "blockers": { "type": "string" },
+        "next": { "type": "string" }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "text", "scope", "visibility", "evidence"],
+      "properties": {
+        "id": { "type": "string" },
+        "status": { "enum": ["candidate", "active", "superseded", "revoked"] },
+        "text": { "type": "string" },
+        "scope": { "type": "string" },
+        "visibility": { "enum": ["public", "team", "private"] },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/ref" } },
+        "supersedes": { "type": "string" },
+        "supersededBy": { "type": "string" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "body"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "enum": ["session_start", "prompt", "stop", "compact", "note"] },
+        "body": { "type": "string" }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventId", "text", "selected", "emitted", "acknowledged", "used"],
+      "properties": {
+        "eventId": { "type": "string" },
+        "text": { "type": "string" },
+        "selected": { "type": "integer" },
+        "emitted": { "type": "integer" },
+        "acknowledged": { "enum": ["unknown"] },
+        "used": { "enum": ["unknown"] },
+        "elapsedMs": { "type": "integer" }
+      }
+    },
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "itemId"],
+      "properties": {
+        "sourceId": { "type": "string" },
+        "itemId": { "type": "string" },
+        "recordHash": { "type": "string" },
+        "startLine": { "type": "integer" },
+        "endLine": { "type": "integer" }
+      }
+    }
+  }
+}
