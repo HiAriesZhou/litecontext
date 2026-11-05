@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -338,9 +337,7 @@ func cloneSnapshot(s snapshot) snapshot {
 	out := s
 	out.Sources = make(map[string]sourceState, len(s.Sources))
 	for id, source := range s.Sources {
-		if source.Record.Extensions != nil {
-			source.Record.Extensions = maps.Clone(source.Record.Extensions)
-		}
+		source.Record.Extensions = cloneExtensions(source.Record.Extensions)
 		out.Sources[id] = source
 	}
 	out.Items = make(map[string]itemState, len(s.Items))
@@ -350,15 +347,44 @@ func cloneSnapshot(s snapshot) snapshot {
 			if item.Attributes.Tags != nil {
 				item.Attributes.Tags = append([]string(nil), item.Attributes.Tags...)
 			}
-			if item.Extensions != nil {
-				item.Extensions = maps.Clone(item.Extensions)
-			}
+			item.Extensions = cloneExtensions(item.Extensions)
 			versions[hash] = item
 		}
 		entry.Versions = versions
 		out.Items[id] = entry
 	}
 	return out
+}
+
+// cloneExtensions copies extension containers. Scalars are immutable.
+// A nil map or slice stays nil so a later canonical encoding does not change.
+func cloneExtensions(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = cloneExtensionValue(value)
+	}
+	return out
+}
+
+func cloneExtensionValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneExtensions(typed)
+	case []any:
+		if typed == nil {
+			return []any(nil)
+		}
+		out := make([]any, len(typed))
+		for i, entry := range typed {
+			out[i] = cloneExtensionValue(entry)
+		}
+		return out
+	default:
+		return value
+	}
 }
 func currentSnapshotHash(r *os.Root) (string, error) {
 	var h head
