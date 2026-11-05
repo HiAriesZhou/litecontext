@@ -431,3 +431,46 @@ func TestDeliveryFailureStillInjects(t *testing.T) {
 		t.Fatalf("note=%q stdout=%s", note, stdout)
 	}
 }
+
+func TestHookInjectsTheStoredTask(t *testing.T) {
+	dir := fixtureBundle(t)
+	store, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := json.Marshal(session.Request{
+		Op:   "checkpoint",
+		Task: &session.Task{Goal: "Ship the checkpoint", Blockers: "Windows not run"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := session.Handle(context.Background(), store, line)
+	if !saved.OK {
+		t.Fatalf("checkpoint: %+v", saved)
+	}
+	stdout, note := Hook(context.Background(), dir, "", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "sess-task",
+		"prompt":          "secret constraint",
+	}))
+	if note != "" || !bytes.Contains(stdout, []byte("Goal: Ship the checkpoint")) || !bytes.Contains(stdout, []byte("Blockers: Windows not run")) || !cited(stdout, "private.md") {
+		t.Fatalf("note=%q stdout=%s", note, stdout)
+	}
+	events, err := os.ReadDir(filepath.Join(dir, "events"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range events {
+		if entry.IsDir() {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, "events", entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "Ship the checkpoint") {
+			t.Fatalf("task stored as an event: %s", entry.Name())
+		}
+	}
+}

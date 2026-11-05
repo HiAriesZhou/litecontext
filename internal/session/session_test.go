@@ -331,3 +331,88 @@ func TestDeliverRecordsThroughTheSessionContract(t *testing.T) {
 		t.Fatalf("events: %v", entries)
 	}
 }
+
+func TestCheckpointSurvivesTheNextPrepare(t *testing.T) {
+	dir := fixtureBundle(t)
+	b, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	saved := Handle(ctx, b, []byte(`{"op":"checkpoint","task":{"goal":"Ship the checkpoint","checks":"citation present","blockers":"Windows not run","next":"Review the pack"}}`))
+	if !saved.OK {
+		t.Fatalf("checkpoint: %+v", saved)
+	}
+	prepared := Handle(ctx, b, []byte(`{"op":"prepare","query":"shared rule","budget":2000,"visibility":"public"}`))
+	if !prepared.OK {
+		t.Fatalf("prepare: %+v", prepared)
+	}
+	pack := prepared.Result.(Pack)
+	if len(pack.Entries) < 2 || pack.Entries[0].Role != "task" || !strings.Contains(pack.Entries[0].Text, "Goal: Ship the checkpoint") || !strings.Contains(pack.Entries[0].Text, "Checks: citation present") || !strings.Contains(pack.Entries[0].Text, "Blockers: Windows not run") || !strings.Contains(pack.Entries[0].Text, "Next: Review the pack") {
+		t.Fatalf("pack: %+v", pack.Entries)
+	}
+	if pack.Entries[1].Role != "knowledge" {
+		t.Fatalf("knowledge missing: %+v", pack.Entries)
+	}
+	override := Handle(ctx, b, []byte(`{"op":"prepare","query":"shared rule","budget":2000,"visibility":"public","task":{"goal":"Temporary"}}`))
+	if !override.OK || !strings.Contains(override.Result.(Pack).Entries[0].Text, "Goal: Temporary") || strings.Contains(override.Result.(Pack).Entries[0].Text, "Ship the checkpoint") {
+		t.Fatalf("override: %+v", override.Result)
+	}
+	again := Handle(ctx, b, []byte(`{"op":"prepare","budget":200,"task":{}}`))
+	if !again.OK {
+		t.Fatalf("empty task: %+v", again)
+	}
+	for _, entry := range again.Result.(Pack).Entries {
+		if entry.Role == "task" || strings.Contains(entry.Text, "Ship the checkpoint") {
+			t.Fatalf("stored task leaked into explicit empty task: %+v", again.Result)
+		}
+	}
+	stored := Handle(ctx, b, []byte(`{"op":"prepare","budget":200}`))
+	if !stored.OK || len(stored.Result.(Pack).Entries) != 1 || !strings.Contains(stored.Result.(Pack).Entries[0].Text, "Ship the checkpoint") {
+		t.Fatalf("stored task was replaced by prepare: %+v", stored.Result)
+	}
+	hits := Handle(ctx, b, []byte(`{"op":"search","query":"Ship the checkpoint"}`))
+	if !hits.OK || len(hits.Result.([]bundle.Evidence)) != 0 {
+		t.Fatalf("task became evidence: %+v", hits.Result)
+	}
+	cleared := Handle(ctx, b, []byte(`{"op":"checkpoint","task":{}}`))
+	if !cleared.OK {
+		t.Fatalf("clear: %+v", cleared)
+	}
+	if _, err = os.Stat(filepath.Join(dir, "task", "current.json")); !os.IsNotExist(err) {
+		t.Fatalf("checkpoint file: %v", err)
+	}
+	after := Handle(ctx, b, []byte(`{"op":"prepare","budget":200}`))
+	if !after.OK || len(after.Result.(Pack).Entries) != 0 {
+		t.Fatalf("cleared prepare: %+v", after.Result)
+	}
+	rejected := Handle(ctx, b, []byte("{\"op\":\"checkpoint\",\"task\":{\"goal\":\"bad\u0000goal\"}}"))
+	if rejected.OK {
+		t.Fatalf("accepted a control character: %+v", rejected)
+	}
+	if err = os.MkdirAll(filepath.Join(dir, "task"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(dir, "task", "current.json"), []byte(`{"goal":"broken","extra":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	fallback := Handle(ctx, b, []byte(`{"op":"prepare","query":"shared rule","budget":2000,"visibility":"public"}`))
+	if !fallback.OK {
+		t.Fatalf("corrupt checkpoint blocked prepare: %+v", fallback)
+	}
+	corruptPack := fallback.Result.(Pack)
+	for _, entry := range corruptPack.Entries {
+		if entry.Role == "task" || strings.Contains(entry.Text, "broken") {
+			t.Fatalf("corrupt task was injected: %+v", corruptPack)
+		}
+	}
+	found := false
+	for _, omission := range corruptPack.Omissions {
+		if omission.Role == "task" && omission.Reason == "unavailable" {
+			found = true
+		}
+	}
+	if !found || len(corruptPack.Entries) != 1 || corruptPack.Entries[0].Role != "knowledge" {
+		t.Fatalf("corrupt pack: %+v", corruptPack)
+	}
+}
