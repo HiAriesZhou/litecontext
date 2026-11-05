@@ -364,6 +364,35 @@ func TestHeadHashDoesNotReloadSnapshot(t *testing.T) {
 	}
 }
 
+func TestCatalogDetachesSourceExtensions(t *testing.T) {
+	b := newBundle(t)
+	info, err := b.AddProducer(context.Background(), "notes", testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = b.access(context.Background(), true, func(s *snapshot) error {
+		entry, ok := s.Sources[info.Record.ID]
+		if !ok {
+			return errors.New("missing source")
+		}
+		entry.Record.Extensions = map[string]any{"connector.local-files.sync": "kept"}
+		s.Sources[info.Record.ID] = entry
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := b.Sources(context.Background())
+	if err != nil || len(first) != 1 || first[0].Record.Extensions["connector.local-files.sync"] != "kept" {
+		t.Fatalf("sources: %v %+v", err, first)
+	}
+	first[0].Record.Extensions["connector.local-files.sync"] = "changed"
+	second, err := b.Sources(context.Background())
+	if err != nil || len(second) != 1 || second[0].Record.Extensions["connector.local-files.sync"] != "kept" {
+		t.Fatalf("catalog aliased the cached source: %v %+v", err, second)
+	}
+}
+
 func TestCollectRequiresDirectory(t *testing.T) {
 	b := newBundle(t)
 	file := filepath.Join(t.TempDir(), "note.md")
