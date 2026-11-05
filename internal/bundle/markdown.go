@@ -205,7 +205,51 @@ func normalizedTags(value any) []string {
 	return result
 }
 
+// rejectCaseFoldedPaths fails closed when one source would store two current
+// locators that macOS or Windows cannot distinguish. Simple case folding
+// matches strings.EqualFold, so a case-sensitive collection machine cannot
+// publish a bundle those systems would collapse.
+func rejectCaseFoldedPaths(items map[string]contextmodel.CanonicalContextItem) error {
+	seen := make(map[string]string, len(items))
+	for _, item := range items {
+		locator := item.Provenance.Locator
+		if locator == "" {
+			continue
+		}
+		key := simpleFoldKey(locator)
+		previous, exists := seen[key]
+		if !exists {
+			seen[key] = locator
+			continue
+		}
+		left, right := previous, locator
+		if right < left {
+			left, right = right, left
+		}
+		return fmt.Errorf("portable paths %q and %q differ only by case; previous snapshot retained", left, right)
+	}
+	return nil
+}
+
+func simpleFoldKey(value string) string {
+	var folded strings.Builder
+	folded.Grow(len(value))
+	for _, r := range value {
+		smallest := r
+		for next := unicode.SimpleFold(r); next != r; next = unicode.SimpleFold(next) {
+			if next < smallest {
+				smallest = next
+			}
+		}
+		folded.WriteRune(smallest)
+	}
+	return folded.String()
+}
+
 func (s *snapshot) writeSnapshot(record contextmodel.CanonicalSourceRecord, isNew bool, items map[string]contextmodel.CanonicalContextItem, observedAt string, result *CollectResult) error {
+	if err := rejectCaseFoldedPaths(items); err != nil {
+		return err
+	}
 	for id, item := range items {
 		entry, exists := s.Items[id]
 		hash := item.Provenance.RecordHash
