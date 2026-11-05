@@ -250,3 +250,23 @@ func TestPrepareTermsMatchEitherTerm(t *testing.T) {
 func utf8RuneCount(value string) int {
 	return len([]rune(value))
 }
+
+func TestSaveEmissionReplacesText(t *testing.T) {
+	dir := fixtureBundle(t)
+	if err := SaveEmission(context.Background(), dir, "turn-1", "first citation"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveEmission(context.Background(), dir, "turn-1", "second citation"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadEmission(dir, "turn-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Emitted != "second citation" || got.Acknowledged != "unknown" || got.Used != "unknown" || got.EventID != "turn-1" {
+		t.Fatalf("emission: %+v", got)
+	}
+	if err = SaveEmission(context.Background(), dir, "../x", "no"); err == nil {
+		t.Fatal("accepted a path id")
+	}
+}

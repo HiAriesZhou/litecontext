@@ -285,25 +285,7 @@ func record(ctx context.Context, bundleDir string, event Event) (bool, error) {
 	if err := plainText(event.Body, maxEventBytes); err != nil {
 		return false, err
 	}
-	root, err := os.OpenRoot(bundleDir)
-	if err != nil {
-		return false, fmt.Errorf("event storage failed")
-	}
-	defer root.Close()
-	info, err := root.Lstat("events")
-	if errors.Is(err, os.ErrNotExist) {
-		if err = root.Mkdir("events", 0700); err != nil && !errors.Is(err, os.ErrExist) {
-			return false, fmt.Errorf("event storage failed")
-		}
-	} else if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return false, fmt.Errorf("event storage failed")
-	}
-	events, err := root.OpenRoot("events")
-	if err != nil {
-		return false, fmt.Errorf("event storage failed")
-	}
-	defer events.Close()
-	release, err := lockDirectory(ctx, filepath.Join(bundleDir, "events"))
+	events, release, err := openEventDir(ctx, bundleDir)
 	if err != nil {
 		return false, fmt.Errorf("event storage failed")
 	}
@@ -352,6 +334,39 @@ func record(ctx context.Context, bundleDir string, event Event) (bool, error) {
 		return false, fmt.Errorf("event storage failed")
 	}
 	return false, nil
+}
+
+func openEventDir(ctx context.Context, bundleDir string) (*os.Root, func(), error) {
+	root, err := os.OpenRoot(bundleDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := root.Lstat("events")
+	if errors.Is(err, os.ErrNotExist) {
+		if err = root.Mkdir("events", 0700); err != nil && !errors.Is(err, os.ErrExist) {
+			root.Close()
+			return nil, nil, err
+		}
+	} else if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		root.Close()
+		return nil, nil, fmt.Errorf("event storage failed")
+	}
+	events, err := root.OpenRoot("events")
+	if err != nil {
+		root.Close()
+		return nil, nil, err
+	}
+	release, err := lockDirectory(ctx, filepath.Join(bundleDir, "events"))
+	if err != nil {
+		events.Close()
+		root.Close()
+		return nil, nil, err
+	}
+	return events, func() {
+		release()
+		events.Close()
+		root.Close()
+	}, nil
 }
 
 func canonical(event Event) ([]byte, error) {
