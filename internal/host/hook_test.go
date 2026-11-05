@@ -131,6 +131,18 @@ func TestNaturalPromptDoesNotRequireEveryWord(t *testing.T) {
 	}
 }
 
+func TestPunctuationDoesNotHideAMatchingTerm(t *testing.T) {
+	dir := fixtureBundle(t)
+	stdout, note := Hook(context.Background(), dir, "public", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "sess-punct",
+		"prompt":          "where is the rule?",
+	}))
+	if note != "" || !cited(stdout, "public.md") || bytes.Contains(stdout, []byte("secret")) {
+		t.Fatalf("note=%q stdout=%s", note, stdout)
+	}
+}
+
 func TestChinesePromptMatchesAShortWindow(t *testing.T) {
 	source := t.TempDir()
 	if err := os.WriteFile(filepath.Join(source, "deploy.md"), []byte("# 部署\n\n部署约束保持不变。\n"), 0o600); err != nil {
