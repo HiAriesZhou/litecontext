@@ -139,15 +139,17 @@ func (b *Bundle) Show(ctx context.Context, ref EvidenceRef, scope Scope) (Eviden
 	return result, err
 }
 func (b *Bundle) Sources(ctx context.Context) ([]SourceInfo, error) {
-	_, sources, err := b.Catalog(ctx)
+	_, _, sources, err := b.Catalog(ctx)
 	return sources, err
 }
 
-// Catalog reads the current generation and source list from one snapshot.
-func (b *Bundle) Catalog(ctx context.Context) (uint64, []SourceInfo, error) {
+// Catalog reads the current snapshot hash, generation, and source list from one snapshot.
+func (b *Bundle) Catalog(ctx context.Context) (string, uint64, []SourceInfo, error) {
 	result := []SourceInfo{}
 	var generation uint64
-	err := b.access(ctx, false, func(s *snapshot) error {
+	var hash string
+	err := b.readSnapshot(ctx, func(snapshotHash string, s *snapshot) error {
+		hash = snapshotHash
 		generation = s.Generation
 		for _, entry := range s.Sources {
 			result = append(result, SourceInfo{Record: entry.Record, Active: entry.Active})
@@ -155,7 +157,7 @@ func (b *Bundle) Catalog(ctx context.Context) (uint64, []SourceInfo, error) {
 		return nil
 	})
 	sort.Slice(result, func(i, j int) bool { return result[i].Record.ID < result[j].Record.ID })
-	return generation, result, err
+	return hash, generation, result, err
 }
 func (b *Bundle) SetVisibility(ctx context.Context, sourceID, itemID, visibility string) error {
 	if !validVisibility(visibility, true) {

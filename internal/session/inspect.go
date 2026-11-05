@@ -52,7 +52,7 @@ func Inspect(ctx context.Context, opened *bundle.Bundle) (Report, error) {
 		Deliveries:      []Emission{},
 		Failures:        []string{},
 	}
-	generation, sources, err := opened.Catalog(ctx)
+	hash, generation, sources, err := opened.Catalog(ctx)
 	catalogOK := err == nil
 	if err != nil {
 		report.Failures = append(report.Failures, "sources unavailable")
@@ -104,8 +104,8 @@ func Inspect(ctx context.Context, opened *bundle.Bundle) (Report, error) {
 	}
 	report.Deliveries = deliveries
 	if catalogOK {
-		later, _, laterErr := opened.Catalog(ctx)
-		if laterErr != nil || later != generation {
+		later, laterErr := opened.HeadHash(ctx)
+		if laterErr != nil || later != hash {
 			report.Failures = append(report.Failures, "snapshot changed")
 		}
 	}

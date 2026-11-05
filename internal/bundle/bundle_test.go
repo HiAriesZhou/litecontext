@@ -334,6 +334,36 @@ func TestOpenHandleReusesSnapshotUntilHEADChanges(t *testing.T) {
 	}
 }
 
+func TestHeadHashDoesNotReloadSnapshot(t *testing.T) {
+	source := t.TempDir()
+	writeFile(t, filepath.Join(source, "a.md"), "# Alpha\n\nfirst rule.\n")
+	b := newBundle(t)
+	if _, err := b.CollectMarkdown(context.Background(), source, "notes", testNow); err != nil {
+		t.Fatal(err)
+	}
+	hash, generation, sources, err := b.Catalog(context.Background())
+	if err != nil || hash == "" || generation == 0 || len(sources) != 1 {
+		t.Fatalf("catalog: %s %d %+v %v", hash, generation, sources, err)
+	}
+	loads := b.snapshotLoads
+	later, err := b.HeadHash(context.Background())
+	if err != nil || later != hash || b.snapshotLoads != loads {
+		t.Fatalf("head hash = %s loads %d -> %d: %v", later, loads, b.snapshotLoads, err)
+	}
+	other, err := Open(b.Dir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(source, "a.md"), "# Alpha\n\nsecond rule.\n")
+	if _, err = other.CollectMarkdown(context.Background(), source, "notes", testNow.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := b.HeadHash(context.Background())
+	if err != nil || changed == hash || b.snapshotLoads != loads {
+		t.Fatalf("changed head = %s loads %d -> %d: %v", changed, loads, b.snapshotLoads, err)
+	}
+}
+
 func TestCollectRequiresDirectory(t *testing.T) {
 	b := newBundle(t)
 	file := filepath.Join(t.TempDir(), "note.md")
