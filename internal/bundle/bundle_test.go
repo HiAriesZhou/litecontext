@@ -794,3 +794,34 @@ func TestReadReleasesLockBeforeParsing(t *testing.T) {
 		t.Fatalf("read held the bundle lock while parsing: %v", lockErr)
 	}
 }
+
+func TestCommittedSnapshotBytesAreCanonical(t *testing.T) {
+	b, source := newBundleAndSource(t)
+	if _, err := b.CollectMarkdown(context.Background(), source, "notes", testNow); err != nil {
+		t.Fatal(err)
+	}
+	r, err := os.OpenRoot(b.Dir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	m, err := readManifest(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, live, err := loadSnapshot(r, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := readRegular(r, live, maximumSnapshotBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := encodeCanonical(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(canonical, raw) {
+		t.Fatalf("committed snapshot is not canonical: file %d canonical %d", len(raw), len(canonical))
+	}
+}

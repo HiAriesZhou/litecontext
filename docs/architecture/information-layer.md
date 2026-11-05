@@ -44,7 +44,7 @@ A one-shot read holds the bundle lock only while copying the current snapshot an
 
 macOS is the first host target, using the existing file-lock implementation. Windows is the second and must be native. A Windows agent does not reliably share paths, hooks, and process state with WSL2, so WSL2 is not the product path. The Windows build uses `LockFileEx` for the bundle lock and the event lock. Atomic replacement of `HEAD` uses the Go 1.26 `os.Root` rename, which replaces an existing file. CI runs the suite on `windows-latest`. A Windows agent hook has not been observed. Linux can keep the current lock implementation, but it is not a product target.
 
-One-shot preparation stays on the machine that holds the project files. It does not call a model or use the network. Literal search remains the retrieval method until a measured one-shot prepare of a normal bundle exceeds the hook deadline. Only then is a rebuildable index considered. The index candidate is pure-Go SQLite, because a CGO SQLite build makes Windows compatibility worse. A vector database, reranker, and knowledge graph are not required for the first host integration.
+One-shot preparation stays on the machine that holds the project files. It does not call a model or use the network. Opening the committed snapshot dominates a cold hook, so the read path keeps those canonical bytes instead of serializing them again. A prompt hook over 200 notes still has to finish within 200ms, and retrieval stays literal while it does. A rebuildable index is considered only when search itself misses that deadline. The index candidate is pure-Go SQLite, because a CGO SQLite build makes Windows compatibility worse. A vector database, reranker, and knowledge graph are not required for the first host integration.
 
 ## Technology choices
 
@@ -54,7 +54,7 @@ One-shot preparation stays on the machine that holds the project files. It does 
 | Storage | File bundle behind one storage interface | Keep the current authority while isolating platform locks |
 | Host boundary | JSON stdio, eight operations at version 1 | A client can integrate without linking the core |
 | Process | One-shot process per hook event; `lc serve` only when a client holds it | Command hooks cannot keep a warm process |
-| Retrieval | Literal search until a measured one-shot prepare misses the hook deadline | Do not add an index before that miss is observed |
+| Retrieval | Literal search while a 200-note prompt hook stays within 200ms | Add an index only when search itself misses that deadline |
 | Model use | Off the delivery path | Host hooks cannot wait for extraction |
 
 Model extraction waits until delivery can be checked. A later model task has explicit limits on calls and size. If no model is available, source retrieval, existing memory, and task state still work.
@@ -88,4 +88,4 @@ The prototype checks one software project handed between Codex and Claude Code. 
 
 The prototype is accepted only when the record matches what the host received, required constraints are present, superseded decisions are not presented as current, and the added time stays visible. The macOS path is accepted before the Windows adapter. Windows acceptance includes a native lock, an atomic bundle commit, and the same stdio contract. Knowledge must work without Memory. Memory must accept a cited conclusion without a complete knowledge base. Context must allow either supplier to be replaced.
 
-The stdio contract, deterministic assembly, task checkpoints, the one-shot hook adapter, and the prototype sample are in place. Windows CI runs the suite. A Windows agent hook has not been observed. Model extraction and an extra index come after a measured one-shot prepare misses the hook deadline.
+The stdio contract, deterministic assembly, task checkpoints, the one-shot hook adapter, and the prototype sample are in place. Windows CI runs the suite. A Windows agent hook has not been observed. Model extraction and an extra index come after search itself misses the hook deadline.
