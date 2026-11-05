@@ -735,3 +735,27 @@ func TestHookAcceptsUTF8BOMAndCRLF(t *testing.T) {
 		t.Fatalf("utf16 note=%q stdout=%s", note, stdout)
 	}
 }
+
+func TestProfilesOwnTheHookEnvelope(t *testing.T) {
+	raw := append([]byte{0xEF, 0xBB, 0xBF}, []byte(`{"hook_event_name":"UserPromptSubmit","session_id":"s","prompt":"hello","source":"startup"}`)...)
+	for _, name := range []string{"", "codex", "claude", "gemini"} {
+		selected, ok := resolveProfile(name)
+		if !ok || selected.decode == nil || selected.encode == nil {
+			t.Fatalf("%q missing codec", name)
+		}
+		decoded, err := selected.decode(raw)
+		if err != nil || decoded.eventName != "UserPromptSubmit" || decoded.sessionID != "s" || decoded.prompt != "hello" || decoded.source != "startup" {
+			t.Fatalf("%q decode: %v %+v", name, err, decoded)
+		}
+		out, err := selected.encode(decoded.eventName, "note")
+		if err != nil || !bytes.Contains(out, []byte(`"hookEventName":"UserPromptSubmit"`)) || !bytes.Contains(out, []byte(`"additionalContext":"note"`)) {
+			t.Fatalf("%q encode: %v %s", name, err, out)
+		}
+		if EventNameFor(name, raw) != "UserPromptSubmit" {
+			t.Fatalf("%q event name", name)
+		}
+	}
+	if EventNameFor("unknown", raw) != "" {
+		t.Fatal("unknown host returned an event name")
+	}
+}

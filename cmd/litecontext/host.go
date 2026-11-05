@@ -41,11 +41,11 @@ func runHost(arguments []string) error {
 		}
 		return nil
 	}
-	stdout, stderr, timedOut := host.Wait(context.Background(), hookDeadline(*hostName, host.EventName(raw)), func(ctx context.Context) ([]byte, string) {
+	stdout, stderr, timedOut := host.Wait(context.Background(), hookDeadline(*hostName, host.EventNameFor(*hostName, raw)), func(ctx context.Context) ([]byte, string) {
 		return host.HookFor(ctx, *dir, *visibility, *hostName, raw)
 	})
 	if timedOut {
-		if host.Diagnostic(*hostName, host.EventName(raw)) {
+		if host.Diagnostic(*hostName, host.EventNameFor(*hostName, raw)) {
 			fmt.Fprintln(os.Stderr, "lc: hook skipped: deadline")
 		}
 		// main exits 0 after this return, which stops the timed-out hook.
