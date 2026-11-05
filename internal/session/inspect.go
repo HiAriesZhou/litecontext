@@ -10,11 +10,23 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/HiAriesZhou/litecontext/internal/bundle"
 	"github.com/HiAriesZhou/litecontext/internal/strictjson"
 )
 
+// Source is the source information a client may show. It has no device path.
+type Source struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	UpdatedAt string `json:"updatedAt"`
+	Active    bool   `json:"active"`
+}
+
 // Report is the read-only view of one bundle. It copies nothing into a second store.
 type Report struct {
+	Generation      uint64         `json:"generation"`
+	Sources         []Source       `json:"sources"`
 	Task            *Task          `json:"task,omitempty"`
 	CurrentMemories []MemoryRecord `json:"currentMemories"`
 	Memories        []MemoryRecord `json:"memories"`
@@ -23,18 +35,40 @@ type Report struct {
 	Failures        []string       `json:"failures"`
 }
 
-// Inspect reads the task, memories, events, and deliveries already stored in the bundle.
-func Inspect(ctx context.Context, bundleDir string) (Report, error) {
+// Inspect reads the snapshot catalog, task, memories, events, and deliveries already stored in the bundle.
+// Generation labels the source list. If that snapshot cannot be confirmed unchanged, the failure token is "snapshot changed".
+func Inspect(ctx context.Context, opened *bundle.Bundle) (Report, error) {
 	if ctx.Err() != nil {
 		return Report{}, ctx.Err()
 	}
+	if opened == nil {
+		return Report{}, errors.New("bundle unavailable")
+	}
 	report := Report{
+		Sources:         []Source{},
 		CurrentMemories: []MemoryRecord{},
 		Memories:        []MemoryRecord{},
 		Events:          []Event{},
 		Deliveries:      []Emission{},
 		Failures:        []string{},
 	}
+	generation, sources, err := opened.Catalog(ctx)
+	catalogOK := err == nil
+	if err != nil {
+		report.Failures = append(report.Failures, "sources unavailable")
+	} else {
+		report.Generation = generation
+		for _, source := range sources {
+			report.Sources = append(report.Sources, Source{
+				ID:        source.Record.ID,
+				Name:      source.Record.Name,
+				Type:      source.Record.Type,
+				UpdatedAt: source.Record.UpdatedAt,
+				Active:    source.Active,
+			})
+		}
+	}
+	bundleDir := opened.Dir()
 	task, err := ReadTask(ctx, bundleDir)
 	if err == nil {
 		report.Task = task
@@ -69,6 +103,12 @@ func Inspect(ctx context.Context, bundleDir string) (Report, error) {
 		report.Failures = append(report.Failures, "delivery unavailable")
 	}
 	report.Deliveries = deliveries
+	if catalogOK {
+		later, _, laterErr := opened.Catalog(ctx)
+		if laterErr != nil || later != generation {
+			report.Failures = append(report.Failures, "snapshot changed")
+		}
+	}
 	return report, nil
 }
 

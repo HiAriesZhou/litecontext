@@ -27,26 +27,22 @@ func runView(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	sources, err := opened.Sources(context.Background())
+	report, err := session.Inspect(context.Background(), opened)
 	if err != nil {
 		return err
 	}
-	report, err := session.Inspect(context.Background(), opened.Dir())
-	if err != nil {
-		return err
-	}
-	pageSources := make([]view.Source, 0, len(sources))
-	for _, source := range sources {
+	pageSources := make([]view.Source, 0, len(report.Sources))
+	for _, source := range report.Sources {
 		pageSources = append(pageSources, view.Source{
-			ID:        source.Record.ID,
-			Name:      source.Record.Name,
-			Type:      source.Record.Type,
-			UpdatedAt: source.Record.UpdatedAt,
+			ID:        source.ID,
+			Name:      source.Name,
+			Type:      source.Type,
+			UpdatedAt: source.UpdatedAt,
 			Active:    source.Active,
 		})
 	}
 	return view.Write(opened.Dir(), *output, view.Page{
-		Generation: opened.Generation(),
+		Generation: report.Generation,
 		Sources:    pageSources,
 		Report:     report,
 	})
