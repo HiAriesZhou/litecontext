@@ -322,7 +322,7 @@ func TestPromptInjectionMatchesPrepare(t *testing.T) {
 		t.Fatal(err)
 	}
 	line, err := json.Marshal(session.Request{
-		Op: "prepare", Terms: session.PromptTerms(prompt), Limit: 10, Budget: 2000,
+		Version: session.ContractVersion, Op: "prepare", Terms: session.PromptTerms(prompt), Limit: 10, Budget: 2000,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -440,8 +440,9 @@ func TestHookInjectsTheStoredTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	line, err := json.Marshal(session.Request{
-		Op:   "checkpoint",
-		Task: &session.Task{Goal: "Ship the checkpoint", Blockers: "Windows not run"},
+		Version: session.ContractVersion,
+		Op:      "checkpoint",
+		Task:    &session.Task{Goal: "Ship the checkpoint", Blockers: "Windows not run"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -483,8 +484,9 @@ func TestSessionStartInjectsStoredTaskWithoutSearching(t *testing.T) {
 		t.Fatal(err)
 	}
 	line, err := json.Marshal(session.Request{
-		Op:   "checkpoint",
-		Task: &session.Task{Goal: "Ship the checkpoint"},
+		Version: session.ContractVersion,
+		Op:      "checkpoint",
+		Task:    &session.Task{Goal: "Ship the checkpoint"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -517,7 +519,7 @@ func TestHookInjectsConfirmedMemoryOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	hash := "sha256:" + strings.Repeat("ab", 32)
-	line, err := json.Marshal(session.Request{Op: "memory", Memory: &session.MemoryChange{
+	line, err := json.Marshal(session.Request{Version: session.ContractVersion, Op: "memory", Memory: &session.MemoryChange{
 		Action: "propose", ID: "use-local", Text: "Do not use the remote API", Scope: "project",
 		Evidence: []session.Ref{{SourceID: "src_missing", ItemID: "itm_decision", RecordHash: hash}},
 	}})
@@ -535,7 +537,7 @@ func TestHookInjectsConfirmedMemoryOnly(t *testing.T) {
 	if note != "" || bytes.Contains(stdout, []byte("remote API")) || !cited(stdout, "private.md") {
 		t.Fatalf("candidate note=%q stdout=%s", note, stdout)
 	}
-	confirm, err := json.Marshal(session.Request{Op: "memory", Memory: &session.MemoryChange{Action: "confirm", ID: "use-local"}})
+	confirm, err := json.Marshal(session.Request{Version: session.ContractVersion, Op: "memory", Memory: &session.MemoryChange{Action: "confirm", ID: "use-local"}})
 	if err != nil {
 		t.Fatal(err)
 	}

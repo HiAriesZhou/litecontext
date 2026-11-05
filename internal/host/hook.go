@@ -120,8 +120,9 @@ func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, st
 	}
 	id := eventID(kind, in.SessionID, body)
 	record, err := json.Marshal(session.Request{
-		Op:    "record",
-		Event: &session.Event{ID: id, Kind: kind, Body: body},
+		Version: session.ContractVersion,
+		Op:      "record",
+		Event:   &session.Event{ID: id, Kind: kind, Body: body},
 	})
 	if err != nil {
 		return nil, "hook skipped: request failed"
@@ -145,6 +146,7 @@ func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, st
 		return nil, "hook skipped: deadline"
 	}
 	line, err := json.Marshal(session.Request{
+		Version:    session.ContractVersion,
 		Op:         "prepare",
 		Terms:      terms,
 		Limit:      10,
@@ -173,6 +175,7 @@ func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, st
 		return nil, "hook skipped: deadline"
 	}
 	deliveryLine, err := json.Marshal(session.Request{
+		Version: session.ContractVersion,
 		Op:      "deliver",
 		EventID: id,
 		Delivery: &session.DeliveryInput{
