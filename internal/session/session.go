@@ -21,6 +21,7 @@ import (
 )
 
 const (
+	ContractVersion = 1
 	maxRequestBytes = 1 << 20
 	maxEventBytes   = 32 << 10
 	defaultBudget   = 4000
@@ -29,6 +30,7 @@ const (
 )
 
 type Request struct {
+	Version    int            `json:"version"`
 	Op         string         `json:"op" enum:"record,prepare,search,show,deliver,checkpoint,memory,inspect"`
 	Query      string         `json:"query,omitempty"`
 	Terms      []string       `json:"terms,omitempty"`
@@ -83,11 +85,12 @@ type DeliveryInput struct {
 }
 
 type Response struct {
-	OK     bool   `json:"ok"`
-	Op     string `json:"op,omitempty"`
-	Error  string `json:"error,omitempty"`
-	Replay bool   `json:"replay,omitempty"`
-	Result any    `json:"result,omitempty"`
+	Version int    `json:"version"`
+	OK      bool   `json:"ok"`
+	Op      string `json:"op,omitempty" enum:"record,prepare,search,show,deliver,checkpoint,memory,inspect"`
+	Error   string `json:"error,omitempty"`
+	Replay  bool   `json:"replay,omitempty"`
+	Result  any    `json:"result,omitempty"`
 }
 
 type Pack struct {
@@ -153,13 +156,16 @@ func Once(ctx context.Context, in io.Reader, out io.Writer, b *bundle.Bundle) er
 func Handle(ctx context.Context, b *bundle.Bundle, line []byte) Response {
 	var request Request
 	if err := strictjson.Decode(line, &request); err != nil {
-		return Response{Error: "invalid request"}
+		return Response{Version: ContractVersion, Error: "invalid request"}
+	}
+	if request.Version != ContractVersion {
+		return Response{Version: ContractVersion, Op: request.Op, Error: "invalid request"}
 	}
 	result, replay, err := dispatch(ctx, b, request)
 	if err != nil {
-		return Response{Op: request.Op, Error: publicError(err)}
+		return Response{Version: ContractVersion, Op: request.Op, Error: publicError(err)}
 	}
-	return Response{OK: true, Op: request.Op, Replay: replay, Result: result}
+	return Response{Version: ContractVersion, OK: true, Op: request.Op, Replay: replay, Result: result}
 }
 
 func dispatch(ctx context.Context, b *bundle.Bundle, request Request) (any, bool, error) {

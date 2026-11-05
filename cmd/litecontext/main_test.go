@@ -205,7 +205,7 @@ func TestServeOnceCommandRecordsAnEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = writer.WriteString("{\"op\":\"record\",\"event\":{\"id\":\"cli-1\",\"kind\":\"note\",\"body\":\"Portable rule\"}}\n"); err != nil {
+	if _, err = writer.WriteString("{\"version\":1,\"op\":\"record\",\"event\":{\"id\":\"cli-1\",\"kind\":\"note\",\"body\":\"Portable rule\"}}\n"); err != nil {
 		t.Fatal(err)
 	}
 	writer.Close()
@@ -294,13 +294,13 @@ func TestServeCheckpointFeedsTheNextPrepare(t *testing.T) {
 	captureStdout(t, func() error {
 		return run([]string{"collect", "markdown", source, "--bundle", dir, "--name", "notes", "--json"})
 	})
-	saved := withStdin(t, "{\"op\":\"checkpoint\",\"task\":{\"goal\":\"Ship the checkpoint\",\"next\":\"Review the pack\"}}\n", func() error {
+	saved := withStdin(t, "{\"version\":1,\"op\":\"checkpoint\",\"task\":{\"goal\":\"Ship the checkpoint\",\"next\":\"Review the pack\"}}\n", func() error {
 		return run([]string{"serve", "--bundle", dir, "--once"})
 	})
 	if !strings.Contains(saved, `"ok":true`) {
 		t.Fatalf("checkpoint: %s", saved)
 	}
-	prepared := withStdin(t, "{\"op\":\"prepare\",\"query\":\"Portable rule\",\"budget\":2000}\n", func() error {
+	prepared := withStdin(t, "{\"version\":1,\"op\":\"prepare\",\"query\":\"Portable rule\",\"budget\":2000}\n", func() error {
 		return run([]string{"serve", "--bundle", dir, "--once"})
 	})
 	if !strings.Contains(prepared, "Goal: Ship the checkpoint") || !strings.Contains(prepared, "Next: Review the pack") || !strings.Contains(prepared, `"locator":"note.md"`) {
@@ -325,13 +325,13 @@ func TestInspectCommandReportsTheDelivery(t *testing.T) {
 	captureStdout(t, func() error {
 		return run([]string{"collect", "markdown", source, "--bundle", dir, "--name", "notes", "--json"})
 	})
-	saved := withStdin(t, "{\"op\":\"checkpoint\",\"task\":{\"goal\":\"Ship the checkpoint\"}}\n", func() error {
+	saved := withStdin(t, "{\"version\":1,\"op\":\"checkpoint\",\"task\":{\"goal\":\"Ship the checkpoint\"}}\n", func() error {
 		return run([]string{"serve", "--bundle", dir, "--once"})
 	})
 	if !strings.Contains(saved, `"ok":true`) {
 		t.Fatalf("checkpoint: %s", saved)
 	}
-	delivered := withStdin(t, "{\"op\":\"deliver\",\"eventId\":\"turn-cli\",\"delivery\":{\"text\":\"Rendered checkpoint\",\"selected\":1,\"emitted\":1,\"elapsedMs\":12}}\n", func() error {
+	delivered := withStdin(t, "{\"version\":1,\"op\":\"deliver\",\"eventId\":\"turn-cli\",\"delivery\":{\"text\":\"Rendered checkpoint\",\"selected\":1,\"emitted\":1,\"elapsedMs\":12}}\n", func() error {
 		return run([]string{"serve", "--bundle", dir, "--once"})
 	})
 	if !strings.Contains(delivered, `"ok":true`) {

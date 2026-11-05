@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litecontext.dev/contracts/session/v1/request.schema.json",
+  "title": "LiteContext session request",
+  "description": "One newline-delimited request to lc serve. Version 1 is required.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "op"],
+  "properties": {
+    "version": { "const": 1 },
+    "op": { "enum": ["record", "prepare", "search", "show", "deliver", "checkpoint", "memory", "inspect"] },
+    "query": { "type": "string" },
+    "terms": { "type": "array", "items": { "type": "string" } },
+    "limit": { "type": "integer" },
+    "budget": { "type": "integer" },
+    "sourceId": { "type": "string" },
+    "itemId": { "type": "string" },
+    "recordHash": { "type": "string" },
+    "startLine": { "type": "integer" },
+    "endLine": { "type": "integer" },
+    "visibility": { "type": "string" },
+    "sources": { "type": "array", "items": { "type": "string" } },
+    "pins": { "type": "array", "items": { "$ref": "#/$defs/ref" } },
+    "task": { "$ref": "#/$defs/task" },
+    "event": { "$ref": "#/$defs/event" },
+    "eventId": { "type": "string" },
+    "delivery": { "$ref": "#/$defs/delivery" },
+    "memory": { "$ref": "#/$defs/memoryChange" }
+  },
+  "$defs": {
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "itemId"],
+      "properties": {
+        "sourceId": { "type": "string" },
+        "itemId": { "type": "string" },
+        "recordHash": { "type": "string" },
+        "startLine": { "type": "integer" },
+        "endLine": { "type": "integer" }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "goal": { "type": "string" },
+        "progress": { "type": "string" },
+        "checks": { "type": "string" },
+        "blockers": { "type": "string" },
+        "next": { "type": "string" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "body"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["session_start", "prompt", "stop", "compact", "note"] },
+        "body": { "type": "string", "minLength": 1 }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "selected", "emitted"],
+      "properties": {
+        "text": { "type": "string" },
+        "selected": { "type": "integer" },
+        "emitted": { "type": "integer" },
+        "acknowledged": { "enum": ["unknown"] },
+        "used": { "enum": ["unknown"] },
+        "elapsedMs": { "type": "integer" }
+      }
+    },
+    "memoryChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "id"],
+      "properties": {
+        "action": { "type": "string" },
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "scope": { "type": "string" },
+        "visibility": { "type": "string" },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/ref" } },
+        "supersedes": { "type": "string" }
+      }
+    }
+  }
+}

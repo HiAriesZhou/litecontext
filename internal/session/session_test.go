@@ -20,7 +20,7 @@ func TestSessionSearchShowRecordAndPrepare(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	search := Handle(ctx, b, []byte(`{"op":"search","query":"shared rule","visibility":"public"}`))
+	search := Handle(ctx, b, []byte(`{"version":1,"op":"search","query":"shared rule","visibility":"public"}`))
 	if !search.OK {
 		t.Fatalf("search: %+v", search)
 	}
@@ -29,28 +29,28 @@ func TestSessionSearchShowRecordAndPrepare(t *testing.T) {
 		t.Fatalf("hits: %#v", search.Result)
 	}
 	ref := hits[0].Ref
-	showLine, _ := json.Marshal(map[string]any{"op": "show", "sourceId": ref.SourceID, "itemId": ref.ItemID, "recordHash": ref.RecordHash, "visibility": "public"})
+	showLine, _ := json.Marshal(map[string]any{"version": 1, "op": "show", "sourceId": ref.SourceID, "itemId": ref.ItemID, "recordHash": ref.RecordHash, "visibility": "public"})
 	show := Handle(ctx, b, showLine)
 	if !show.OK {
 		t.Fatalf("show: %+v", show)
 	}
 
-	first := Handle(ctx, b, []byte(`{"op":"record","event":{"id":"turn-1","kind":"prompt","body":"Keep the public rule"}}`))
+	first := Handle(ctx, b, []byte(`{"version":1,"op":"record","event":{"id":"turn-1","kind":"prompt","body":"Keep the public rule"}}`))
 	if !first.OK || first.Replay {
 		t.Fatalf("record: %+v", first)
 	}
-	second := Handle(ctx, b, []byte(`{"op":"record","event":{"id":"turn-1","kind":"prompt","body":"Keep the public rule"}}`))
+	second := Handle(ctx, b, []byte(`{"version":1,"op":"record","event":{"id":"turn-1","kind":"prompt","body":"Keep the public rule"}}`))
 	if !second.OK || !second.Replay {
 		t.Fatalf("replay: %+v", second)
 	}
-	conflict := Handle(ctx, b, []byte(`{"op":"record","event":{"id":"turn-1","kind":"note","body":"Different"}}`))
+	conflict := Handle(ctx, b, []byte(`{"version":1,"op":"record","event":{"id":"turn-1","kind":"note","body":"Different"}}`))
 	if conflict.OK || !strings.Contains(conflict.Error, "different content") {
 		t.Fatalf("conflict: %+v", conflict)
 	}
 
 	private := privateRef(t, b)
 	prepareLine, _ := json.Marshal(map[string]any{
-		"op": "prepare", "query": "shared rule", "budget": len("Goal: Ship"), "visibility": "public",
+		"version": ContractVersion, "op": "prepare", "query": "shared rule", "budget": len("Goal: Ship"), "visibility": "public",
 		"task": map[string]string{"goal": "Ship"},
 		"pins": []map[string]string{{"sourceId": private.SourceID, "itemId": private.ItemID}},
 	})
@@ -98,8 +98,9 @@ func TestRecordReplaySurvivesJSONEscaping(t *testing.T) {
 	}
 	body := strings.Repeat("\"", 20000)
 	line, err := json.Marshal(map[string]any{
-		"op":    "record",
-		"event": map[string]string{"id": "escaped", "kind": "note", "body": body},
+		"version": ContractVersion,
+		"op":      "record",
+		"event":   map[string]string{"id": "escaped", "kind": "note", "body": body},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -134,10 +135,13 @@ func TestSessionRejectsClosedContractViolations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, line := range []string{
-		`{"op":"forget"}`,
-		`{"op":"search","query":"shared","extra":true}`,
-		`{"op":"record","event":{"id":"../x","kind":"note","body":"no"}}`,
-		`{"op":"prepare","budget":1,"task":{"goal":"x","unknown":1}}`,
+		`{"op":"inspect"}`,
+		`{"version":0,"op":"inspect"}`,
+		`{"version":2,"op":"inspect"}`,
+		`{"version":1,"op":"forget"}`,
+		`{"version":1,"op":"search","query":"shared","extra":true}`,
+		`{"version":1,"op":"record","event":{"id":"../x","kind":"note","body":"no"}}`,
+		`{"version":1,"op":"prepare","budget":1,"task":{"goal":"x","unknown":1}}`,
 	} {
 		response := Handle(context.Background(), b, []byte(line))
 		if response.OK {
@@ -185,11 +189,11 @@ func TestOnceWritesOneResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	err = Once(context.Background(), strings.NewReader("{\"op\":\"search\",\"query\":\"shared rule\",\"visibility\":\"public\"}\n"), &output, b)
+	err = Once(context.Background(), strings.NewReader("{\"version\":1,\"op\":\"search\",\"query\":\"shared rule\",\"visibility\":\"public\"}\n"), &output, b)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(output.String(), "\n") != 1 || !strings.Contains(output.String(), `"ok":true`) {
+	if strings.Count(output.String(), "\n") != 1 || !strings.Contains(output.String(), `"version":1`) || !strings.Contains(output.String(), `"ok":true`) {
 		t.Fatalf("output: %s", output.String())
 	}
 }
@@ -200,7 +204,7 @@ func TestPrepareIncludesRelativeLocator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared := Handle(context.Background(), b, []byte(`{"op":"prepare","query":"shared rule","budget":2000,"visibility":"public"}`))
+	prepared := Handle(context.Background(), b, []byte(`{"version":1,"op":"prepare","query":"shared rule","budget":2000,"visibility":"public"}`))
 	if !prepared.OK {
 		t.Fatalf("prepare: %+v", prepared)
 	}
@@ -217,7 +221,7 @@ func TestPrepareTermsMatchEitherTerm(t *testing.T) {
 		t.Fatal(err)
 	}
 	line, err := json.Marshal(map[string]any{
-		"op": "prepare", "terms": []string{"rule", "missing-word"}, "budget": 2000, "visibility": "public",
+		"version": ContractVersion, "op": "prepare", "terms": []string{"rule", "missing-word"}, "budget": 2000, "visibility": "public",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -234,11 +238,11 @@ func TestPrepareTermsMatchEitherTerm(t *testing.T) {
 	if !strings.Contains(rendered, "public.md#L") || utf8RuneCount(rendered) > 2000 {
 		t.Fatalf("render: %q", rendered)
 	}
-	both := Handle(context.Background(), b, []byte(`{"op":"prepare","query":"rule","terms":["rule"]}`))
+	both := Handle(context.Background(), b, []byte(`{"version":1,"op":"prepare","query":"rule","terms":["rule"]}`))
 	if both.OK {
 		t.Fatalf("query and terms accepted: %+v", both)
 	}
-	anded := Handle(context.Background(), b, []byte(`{"op":"prepare","query":"rule missing-word","budget":2000,"visibility":"public"}`))
+	anded := Handle(context.Background(), b, []byte(`{"version":1,"op":"prepare","query":"rule missing-word","budget":2000,"visibility":"public"}`))
 	if !anded.OK {
 		t.Fatalf("and prepare: %+v", anded)
 	}
@@ -289,7 +293,7 @@ func TestDeliverRecordsThroughTheSessionContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	line := []byte(`{"op":"deliver","eventId":"turn-9","delivery":{"text":"cited line","selected":2,"emitted":1}}`)
+	line := []byte(`{"version":1,"op":"deliver","eventId":"turn-9","delivery":{"text":"cited line","selected":2,"emitted":1}}`)
 	got := Handle(context.Background(), b, line)
 	if !got.OK {
 		t.Fatalf("deliver: %+v", got)
@@ -301,7 +305,7 @@ func TestDeliverRecordsThroughTheSessionContract(t *testing.T) {
 	if stored.Text != "cited line" || stored.Selected != 2 || stored.Emitted != 1 || stored.Acknowledged != "unknown" || stored.Used != "unknown" || stored.EventID != "turn-9" || stored.ElapsedMs != nil {
 		t.Fatalf("stored: %+v", stored)
 	}
-	replaced := Handle(context.Background(), b, []byte(`{"op":"deliver","eventId":"turn-9","delivery":{"text":"later line","selected":2,"emitted":2}}`))
+	replaced := Handle(context.Background(), b, []byte(`{"version":1,"op":"deliver","eventId":"turn-9","delivery":{"text":"later line","selected":2,"emitted":2}}`))
 	if !replaced.OK {
 		t.Fatalf("replace: %+v", replaced)
 	}
@@ -310,12 +314,12 @@ func TestDeliverRecordsThroughTheSessionContract(t *testing.T) {
 		t.Fatalf("replaced: %+v %v", stored, err)
 	}
 	rejected := []string{
-		`{"op":"deliver","eventId":"../x","delivery":{"text":"x","selected":1,"emitted":1}}`,
-		`{"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":2}}`,
-		`{"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":1,"acknowledged":"yes"}}`,
-		`{"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":1,"elapsedMs":-1}}`,
-		`{"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":1,"elapsedMs":600001}}`,
-		`{"op":"deliver","delivery":{"text":"x","selected":1,"emitted":1}}`,
+		`{"version":1,"op":"deliver","eventId":"../x","delivery":{"text":"x","selected":1,"emitted":1}}`,
+		`{"version":1,"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":2}}`,
+		`{"version":1,"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":1,"acknowledged":"yes"}}`,
+		`{"version":1,"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":1,"elapsedMs":-1}}`,
+		`{"version":1,"op":"deliver","eventId":"turn-9","delivery":{"text":"x","selected":1,"emitted":1,"elapsedMs":600001}}`,
+		`{"version":1,"op":"deliver","delivery":{"text":"x","selected":1,"emitted":1}}`,
 	}
 	for _, raw := range rejected {
 		response := Handle(context.Background(), b, []byte(raw))
@@ -339,11 +343,11 @@ func TestCheckpointSurvivesTheNextPrepare(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	saved := Handle(ctx, b, []byte(`{"op":"checkpoint","task":{"goal":"Ship the checkpoint","checks":"citation present","blockers":"Windows not run","next":"Review the pack"}}`))
+	saved := Handle(ctx, b, []byte(`{"version":1,"op":"checkpoint","task":{"goal":"Ship the checkpoint","checks":"citation present","blockers":"Windows not run","next":"Review the pack"}}`))
 	if !saved.OK {
 		t.Fatalf("checkpoint: %+v", saved)
 	}
-	prepared := Handle(ctx, b, []byte(`{"op":"prepare","query":"shared rule","budget":2000,"visibility":"public"}`))
+	prepared := Handle(ctx, b, []byte(`{"version":1,"op":"prepare","query":"shared rule","budget":2000,"visibility":"public"}`))
 	if !prepared.OK {
 		t.Fatalf("prepare: %+v", prepared)
 	}
@@ -354,11 +358,11 @@ func TestCheckpointSurvivesTheNextPrepare(t *testing.T) {
 	if pack.Entries[1].Role != "knowledge" {
 		t.Fatalf("knowledge missing: %+v", pack.Entries)
 	}
-	override := Handle(ctx, b, []byte(`{"op":"prepare","query":"shared rule","budget":2000,"visibility":"public","task":{"goal":"Temporary"}}`))
+	override := Handle(ctx, b, []byte(`{"version":1,"op":"prepare","query":"shared rule","budget":2000,"visibility":"public","task":{"goal":"Temporary"}}`))
 	if !override.OK || !strings.Contains(override.Result.(Pack).Entries[0].Text, "Goal: Temporary") || strings.Contains(override.Result.(Pack).Entries[0].Text, "Ship the checkpoint") {
 		t.Fatalf("override: %+v", override.Result)
 	}
-	again := Handle(ctx, b, []byte(`{"op":"prepare","budget":200,"task":{}}`))
+	again := Handle(ctx, b, []byte(`{"version":1,"op":"prepare","budget":200,"task":{}}`))
 	if !again.OK {
 		t.Fatalf("empty task: %+v", again)
 	}
@@ -367,26 +371,26 @@ func TestCheckpointSurvivesTheNextPrepare(t *testing.T) {
 			t.Fatalf("stored task leaked into explicit empty task: %+v", again.Result)
 		}
 	}
-	stored := Handle(ctx, b, []byte(`{"op":"prepare","budget":200}`))
+	stored := Handle(ctx, b, []byte(`{"version":1,"op":"prepare","budget":200}`))
 	if !stored.OK || len(stored.Result.(Pack).Entries) != 1 || !strings.Contains(stored.Result.(Pack).Entries[0].Text, "Ship the checkpoint") {
 		t.Fatalf("stored task was replaced by prepare: %+v", stored.Result)
 	}
-	hits := Handle(ctx, b, []byte(`{"op":"search","query":"Ship the checkpoint"}`))
+	hits := Handle(ctx, b, []byte(`{"version":1,"op":"search","query":"Ship the checkpoint"}`))
 	if !hits.OK || len(hits.Result.([]bundle.Evidence)) != 0 {
 		t.Fatalf("task became evidence: %+v", hits.Result)
 	}
-	cleared := Handle(ctx, b, []byte(`{"op":"checkpoint","task":{}}`))
+	cleared := Handle(ctx, b, []byte(`{"version":1,"op":"checkpoint","task":{}}`))
 	if !cleared.OK {
 		t.Fatalf("clear: %+v", cleared)
 	}
 	if _, err = os.Stat(filepath.Join(dir, "task", "current.json")); !os.IsNotExist(err) {
 		t.Fatalf("checkpoint file: %v", err)
 	}
-	after := Handle(ctx, b, []byte(`{"op":"prepare","budget":200}`))
+	after := Handle(ctx, b, []byte(`{"version":1,"op":"prepare","budget":200}`))
 	if !after.OK || len(after.Result.(Pack).Entries) != 0 {
 		t.Fatalf("cleared prepare: %+v", after.Result)
 	}
-	rejected := Handle(ctx, b, []byte("{\"op\":\"checkpoint\",\"task\":{\"goal\":\"bad\u0000goal\"}}"))
+	rejected := Handle(ctx, b, []byte("{\"version\":1,\"op\":\"checkpoint\",\"task\":{\"goal\":\"bad\u0000goal\"}}"))
 	if rejected.OK {
 		t.Fatalf("accepted a control character: %+v", rejected)
 	}
@@ -396,7 +400,7 @@ func TestCheckpointSurvivesTheNextPrepare(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(dir, "task", "current.json"), []byte(`{"goal":"broken","extra":true}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	fallback := Handle(ctx, b, []byte(`{"op":"prepare","query":"shared rule","budget":2000,"visibility":"public"}`))
+	fallback := Handle(ctx, b, []byte(`{"version":1,"op":"prepare","query":"shared rule","budget":2000,"visibility":"public"}`))
 	if !fallback.OK {
 		t.Fatalf("corrupt checkpoint blocked prepare: %+v", fallback)
 	}
@@ -425,62 +429,62 @@ func TestMemoryConfirmationAndSupersession(t *testing.T) {
 	}
 	ctx := context.Background()
 	hash := "sha256:" + strings.Repeat("ab", 32)
-	propose := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"propose","id":"use-local","text":"Do not use the remote API","scope":"project","evidence":[{"sourceId":"src_missing","itemId":"itm_decision","recordHash":"`+hash+`"}]}}`))
+	propose := Handle(ctx, b, []byte(`{"version":1,"op":"memory","memory":{"action":"propose","id":"use-local","text":"Do not use the remote API","scope":"project","evidence":[{"sourceId":"src_missing","itemId":"itm_decision","recordHash":"`+hash+`"}]}}`))
 	if !propose.OK {
 		t.Fatalf("propose: %+v", propose)
 	}
-	if corrected := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"correct","id":"use-local","text":"Do not call the remote API"}}`)); !corrected.OK {
+	if corrected := Handle(ctx, b, []byte(`{"version":1,"op":"memory","memory":{"action":"correct","id":"use-local","text":"Do not call the remote API"}}`)); !corrected.OK {
 		t.Fatalf("correct: %+v", corrected)
 	}
-	before := Handle(ctx, b, []byte(`{"op":"prepare","query":"shared rule","budget":4000,"visibility":"public"}`))
+	before := Handle(ctx, b, []byte(`{"version":1,"op":"prepare","query":"shared rule","budget":4000,"visibility":"public"}`))
 	if !before.OK || strings.Contains(fmtPack(t, before), "remote API") {
 		t.Fatalf("candidate was selected: %+v", before.Result)
 	}
 	if len(before.Result.(Pack).Entries) != 1 || before.Result.(Pack).Entries[0].Role != "knowledge" {
 		t.Fatalf("knowledge without memory: %+v", before.Result)
 	}
-	if confirm := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"confirm","id":"use-local"}}`)); !confirm.OK {
+	if confirm := Handle(ctx, b, []byte(`{"version":1,"op":"memory","memory":{"action":"confirm","id":"use-local"}}`)); !confirm.OK {
 		t.Fatalf("confirm: %+v", confirm)
 	}
-	public := Handle(ctx, b, []byte(`{"op":"prepare","query":"shared rule","budget":4000,"visibility":"public"}`))
+	public := Handle(ctx, b, []byte(`{"version":1,"op":"prepare","query":"shared rule","budget":4000,"visibility":"public"}`))
 	if !public.OK || strings.Contains(fmtPack(t, public), "remote API") {
 		t.Fatalf("private memory leaked: %s", fmtPack(t, public))
 	}
-	selected := Handle(ctx, b, []byte(`{"op":"prepare","query":"shared rule","budget":4000}`))
+	selected := Handle(ctx, b, []byte(`{"version":1,"op":"prepare","query":"shared rule","budget":4000}`))
 	if !selected.OK || !strings.Contains(fmtPack(t, selected), "Do not call the remote API") || !strings.Contains(fmtPack(t, selected), "src_missing/itm_decision") || !strings.Contains(fmtPack(t, selected), "public.md") {
 		t.Fatalf("active memory: %s", fmtPack(t, selected))
 	}
-	found := Handle(ctx, b, []byte(`{"op":"search","query":"remote API"}`))
+	found := Handle(ctx, b, []byte(`{"version":1,"op":"search","query":"remote API"}`))
 	if !found.OK || len(found.Result.([]bundle.Evidence)) != 0 {
 		t.Fatalf("memory became evidence: %+v", found.Result)
 	}
 	next := "sha256:" + strings.Repeat("cd", 32)
-	replacement := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"supersede","id":"use-local-v2","supersedes":"use-local","text":"Use the local API","scope":"project","evidence":[{"sourceId":"src_missing","itemId":"itm_replacement","recordHash":"`+next+`"}]}}`))
+	replacement := Handle(ctx, b, []byte(`{"version":1,"op":"memory","memory":{"action":"supersede","id":"use-local-v2","supersedes":"use-local","text":"Use the local API","scope":"project","evidence":[{"sourceId":"src_missing","itemId":"itm_replacement","recordHash":"`+next+`"}]}}`))
 	if !replacement.OK {
 		t.Fatalf("supersede: %+v", replacement)
 	}
-	gap := Handle(ctx, b, []byte(`{"op":"prepare","budget":4000}`))
+	gap := Handle(ctx, b, []byte(`{"version":1,"op":"prepare","budget":4000}`))
 	body := fmtPack(t, gap)
 	if !gap.OK || strings.Contains(body, "remote API") || strings.Contains(body, "Use the local API") {
 		t.Fatalf("superseded decision still current: %s", body)
 	}
-	if confirmed := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"confirm","id":"use-local-v2"}}`)); !confirmed.OK {
+	if confirmed := Handle(ctx, b, []byte(`{"version":1,"op":"memory","memory":{"action":"confirm","id":"use-local-v2"}}`)); !confirmed.OK {
 		t.Fatalf("confirm replacement: %+v", confirmed)
 	}
-	current := fmtPack(t, Handle(ctx, b, []byte(`{"op":"prepare","budget":4000}`)))
+	current := fmtPack(t, Handle(ctx, b, []byte(`{"version":1,"op":"prepare","budget":4000}`)))
 	if strings.Contains(current, "remote API") || !strings.Contains(current, "Use the local API") || !strings.Contains(current, "itm_replacement") {
 		t.Fatalf("current memory: %s", current)
 	}
-	if revoked := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"revoke","id":"use-local-v2"}}`)); !revoked.OK {
+	if revoked := Handle(ctx, b, []byte(`{"version":1,"op":"memory","memory":{"action":"revoke","id":"use-local-v2"}}`)); !revoked.OK {
 		t.Fatalf("revoke: %+v", revoked)
 	}
-	if after := fmtPack(t, Handle(ctx, b, []byte(`{"op":"prepare","budget":4000}`))); strings.Contains(after, "local API") {
+	if after := fmtPack(t, Handle(ctx, b, []byte(`{"version":1,"op":"prepare","budget":4000}`))); strings.Contains(after, "local API") {
 		t.Fatalf("revoked memory selected: %s", after)
 	}
 	rejected := []string{
-		`{"op":"memory","memory":{"action":"propose","id":"bare","text":"No citation","scope":"project"}}`,
-		`{"op":"memory","memory":{"action":"confirm","id":"missing"}}`,
-		`{"op":"memory","memory":{"action":"correct","id":"use-local","text":"rewrite history"}}`,
+		`{"version":1,"op":"memory","memory":{"action":"propose","id":"bare","text":"No citation","scope":"project"}}`,
+		`{"version":1,"op":"memory","memory":{"action":"confirm","id":"missing"}}`,
+		`{"version":1,"op":"memory","memory":{"action":"correct","id":"use-local","text":"rewrite history"}}`,
 	}
 	for _, raw := range rejected {
 		if response := Handle(ctx, b, []byte(raw)); response.OK {
@@ -508,30 +512,30 @@ func TestInspectSeparatesCurrentMemoryAndDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if saved := Handle(ctx, b, []byte(`{"op":"checkpoint","task":{"goal":"Ship the checkpoint","next":"Inspect the pack"}}`)); !saved.OK {
+	if saved := Handle(ctx, b, []byte(`{"version":1,"op":"checkpoint","task":{"goal":"Ship the checkpoint","next":"Inspect the pack"}}`)); !saved.OK {
 		t.Fatalf("checkpoint: %+v", saved)
 	}
 	hash := "sha256:" + strings.Repeat("ab", 32)
-	propose := `{"op":"memory","memory":{"action":"propose","id":"use-local","text":"Do not use the remote API","scope":"project","evidence":[{"sourceId":"src_missing","itemId":"itm_decision","recordHash":"` + hash + `"}]}}`
+	propose := `{"version":1,"op":"memory","memory":{"action":"propose","id":"use-local","text":"Do not use the remote API","scope":"project","evidence":[{"sourceId":"src_missing","itemId":"itm_decision","recordHash":"` + hash + `"}]}}`
 	if saved := Handle(ctx, b, []byte(propose)); !saved.OK {
 		t.Fatalf("propose: %+v", saved)
 	}
-	if saved := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"confirm","id":"use-local"}}`)); !saved.OK {
+	if saved := Handle(ctx, b, []byte(`{"version":1,"op":"memory","memory":{"action":"confirm","id":"use-local"}}`)); !saved.OK {
 		t.Fatalf("confirm: %+v", saved)
 	}
 	next := "sha256:" + strings.Repeat("cd", 32)
-	replace := `{"op":"memory","memory":{"action":"supersede","id":"use-local-v2","supersedes":"use-local","text":"Use the local API","scope":"project","evidence":[{"sourceId":"src_missing","itemId":"itm_replacement","recordHash":"` + next + `"}]}}`
+	replace := `{"version":1,"op":"memory","memory":{"action":"supersede","id":"use-local-v2","supersedes":"use-local","text":"Use the local API","scope":"project","evidence":[{"sourceId":"src_missing","itemId":"itm_replacement","recordHash":"` + next + `"}]}}`
 	if saved := Handle(ctx, b, []byte(replace)); !saved.OK {
 		t.Fatalf("supersede: %+v", saved)
 	}
-	if saved := Handle(ctx, b, []byte(`{"op":"memory","memory":{"action":"confirm","id":"use-local-v2"}}`)); !saved.OK {
+	if saved := Handle(ctx, b, []byte(`{"version":1,"op":"memory","memory":{"action":"confirm","id":"use-local-v2"}}`)); !saved.OK {
 		t.Fatalf("confirm replacement: %+v", saved)
 	}
-	if saved := Handle(ctx, b, []byte(`{"op":"record","event":{"id":"turn-inspect","kind":"prompt","body":"Inspect the pack"}}`)); !saved.OK {
+	if saved := Handle(ctx, b, []byte(`{"version":1,"op":"record","event":{"id":"turn-inspect","kind":"prompt","body":"Inspect the pack"}}`)); !saved.OK {
 		t.Fatalf("record: %+v", saved)
 	}
 	elapsed := 12
-	delivered := Handle(ctx, b, []byte(`{"op":"deliver","eventId":"turn-inspect","delivery":{"text":"Goal: Ship the checkpoint\nUse the local API","selected":2,"emitted":2,"elapsedMs":12}}`))
+	delivered := Handle(ctx, b, []byte(`{"version":1,"op":"deliver","eventId":"turn-inspect","delivery":{"text":"Goal: Ship the checkpoint\nUse the local API","selected":2,"emitted":2,"elapsedMs":12}}`))
 	if !delivered.OK {
 		t.Fatalf("deliver: %+v", delivered)
 	}
@@ -568,7 +572,7 @@ func TestInspectSeparatesCurrentMemoryAndDelivery(t *testing.T) {
 	if len(report.Events) != 1 || report.Events[0].ID != "turn-inspect" || report.Events[0].Kind != "prompt" {
 		t.Fatalf("events: %+v", report.Events)
 	}
-	response := Handle(ctx, b, []byte(`{"op":"inspect"}`))
+	response := Handle(ctx, b, []byte(`{"version":1,"op":"inspect"}`))
 	inspected, ok := response.Result.(Report)
 	if !response.OK || !ok || inspected.Task == nil || inspected.Task.Goal != "Ship the checkpoint" || len(inspected.CurrentMemories) != 1 {
 		t.Fatalf("inspect op: %+v", response)

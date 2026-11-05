@@ -6,7 +6,7 @@ LiteContext keeps source files in place and uses inspectable, portable files wit
 
 ## Status
 
-Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. `lc serve` exposes those reads, plus append-only session events, a replaceable task checkpoint, explicit memory changes, a bounded context pack, and a read-only inspect report, over newline-delimited JSON. `lc host hook` maps one Codex or Claude Code hook event onto that contract and does not install host configuration. `lc inspect` prints the stored task, memories, events, and deliveries without starting a viewer or a service. A memory is included only after it is confirmed. A delivery record may include elapsed milliseconds; a record written without that field still reads. CI runs the Go suite on Windows. A Windows agent hook has not been observed.
+Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. `lc serve` exposes those reads, plus append-only session events, a replaceable task checkpoint, explicit memory changes, a bounded context pack, and a read-only inspect report, over newline-delimited JSON at session contract version 1. `lc host hook` maps one Codex or Claude Code hook event onto that contract and does not install host configuration. `lc inspect` prints the stored task, memories, events, and deliveries without starting a viewer or a service. A memory is included only after it is confirmed. A delivery record may include elapsed milliseconds; a record written without that field still reads. CI runs the Go suite on Windows. A Windows agent hook has not been observed.
 
 ## Quick start
 
@@ -21,7 +21,7 @@ go build -o ./bin/lc ./cmd/litecontext
 ./bin/lc source list --bundle /path/to/new-bundle --json
 ./bin/lc search "project rule" --bundle /path/to/new-bundle --visibility public --json
 ./bin/lc serve --bundle /path/to/new-bundle --once <<'JSON'
-{"op":"prepare","query":"project rule","budget":2000}
+{"version":1,"op":"prepare","query":"project rule","budget":2000}
 JSON
 ./bin/lc host hook --bundle /path/to/new-bundle <<'JSON'
 {"hook_event_name":"UserPromptSubmit","session_id":"example","prompt":"project rule"}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litecontext.dev/contracts/session/v1/response.schema.json",
+  "title": "LiteContext session response",
+  "description": "One newline-delimited response from lc serve. Version is always 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "ok"],
+  "properties": {
+    "version": { "const": 1 },
+    "ok": { "type": "boolean" },
+    "op": { "enum": ["record", "prepare", "search", "show", "deliver", "checkpoint", "memory", "inspect"] },
+    "error": { "type": "string" },
+    "replay": { "type": "boolean" },
+    "result": {}
+  }
+}
