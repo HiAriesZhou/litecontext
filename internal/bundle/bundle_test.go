@@ -302,6 +302,38 @@ func TestCrashHelper(t *testing.T) {
 	os.Exit(93)
 }
 
+func TestOpenHandleReusesSnapshotUntilHEADChanges(t *testing.T) {
+	source := t.TempDir()
+	writeFile(t, filepath.Join(source, "a.md"), "# Alpha\n\nfirst rule.\n")
+	b := newBundle(t)
+	if _, err := b.CollectMarkdown(context.Background(), source, "notes", testNow); err != nil {
+		t.Fatal(err)
+	}
+	loads := b.snapshotLoads
+	hits, err := b.Search(context.Background(), "first", Scope{}, 10)
+	if err != nil || len(hits) != 1 {
+		t.Fatalf("cached search: %v %+v", err, hits)
+	}
+	if b.snapshotLoads != loads {
+		t.Fatalf("search reloaded snapshot: %d -> %d", loads, b.snapshotLoads)
+	}
+	writeFile(t, filepath.Join(source, "a.md"), "# Alpha\n\nsecond rule.\n")
+	other, err := Open(b.Dir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = other.CollectMarkdown(context.Background(), source, "notes", testNow.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	hits, err = b.Search(context.Background(), "second", Scope{}, 10)
+	if err != nil || len(hits) != 1 || strings.Contains(hits[0].Text, "first rule") {
+		t.Fatalf("stale handle: %v %+v", err, hits)
+	}
+	if b.snapshotLoads != loads+1 {
+		t.Fatalf("external commit loads = %d, want %d", b.snapshotLoads, loads+1)
+	}
+}
+
 func TestCollectRequiresDirectory(t *testing.T) {
 	b := newBundle(t)
 	file := filepath.Join(t.TempDir(), "note.md")
