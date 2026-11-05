@@ -38,11 +38,13 @@ The host contract has four operations: record an event, prepare context, search 
 
 ## Runtime and platforms
 
-The normal process is session-scoped. The adapter starts it when the host session starts, sends repeated requests over stdio, and stops it when the session ends. A host that cannot hold a process uses the same binary for one request and then exits. There is no machine-wide daemon and no network listener.
+Command hooks start a new process for each event. They do not keep a process warm. Reusing a parsed snapshot applies only while one process holds `lc serve` open, and only until `HEAD` changes. That cache is not the normal injection path. A different process reads the current snapshot on its next open.
+
+A hook must not wait out the two-second bundle lock. Prompt injection gives up after 200ms. Session start gives up after one second. Giving up means exit 0, empty stdout, and one stderr line. Exit 1 is only for command misuse. There is no machine-wide daemon and no network listener. A helper that stays up for the host session is not part of this stage: it would be a background process, and it waits until a measured one-shot prepare misses the deadline above.
 
 macOS is the first host target, using the existing file-lock implementation. Windows is the second and must be native. A Windows agent does not reliably share paths, hooks, and process state with WSL2, so WSL2 is not the product path. The Windows build uses `LockFileEx` for the bundle lock and the event lock. Atomic replacement of `HEAD` uses the Go 1.26 `os.Root` rename, which replaces an existing file. This build compiles for `windows/amd64` and `windows/arm64`; acceptance still requires running it on Windows. Linux can keep the current lock implementation, but it is not a product target.
 
-The hot path stays on the machine that holds the project files. It does not call a model or use the network. An open bundle handle reuses its parsed snapshot until HEAD changes, including across repeated requests in one process. A different process sees the new snapshot on its next read. Literal search remains the retrieval method until a normal prepare exceeds the host hook budget. The budget is under one second for a warm session. Only then is a rebuildable index added. The index candidate is pure-Go SQLite, because a CGO SQLite build makes Windows compatibility worse. A vector database, reranker, and knowledge graph are not required for the first host integration.
+One-shot preparation stays on the machine that holds the project files. It does not call a model or use the network. Literal search remains the retrieval method until a measured one-shot prepare of a normal bundle exceeds the hook deadline. Only then is a rebuildable index considered. The index candidate is pure-Go SQLite, because a CGO SQLite build makes Windows compatibility worse. A vector database, reranker, and knowledge graph are not required for the first host integration.
 
 ## Technology choices
 
@@ -51,8 +53,8 @@ The hot path stays on the machine that holds the project files. It does not call
 | Language | Go, no CGO | One native binary for macOS and Windows |
 | Storage | File bundle behind one storage interface | Keep the current authority while isolating platform locks |
 | Host boundary | JSON stdio, four operations | A client can integrate without linking the core |
-| Process | Session-scoped stdio, with a one-shot fallback | Avoid cold starts without a resident service |
-| Retrieval | Literal search first, pure-Go index only after measurement | Keep the hot path predictable |
+| Process | One-shot process per hook event; `lc serve` only when a client holds it | Command hooks cannot keep a warm process |
+| Retrieval | Literal search until a measured one-shot prepare misses the hook deadline | Do not add an index before that miss is observed |
 | Model use | Off the delivery path | Host hooks cannot wait for extraction |
 
 Model extraction waits until delivery can be checked. A later model task has explicit limits on calls and size. If no model is available, source retrieval, existing memory, and task state still work.
