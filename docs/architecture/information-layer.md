@@ -1,6 +1,6 @@
 # Information layer
 
-LiteContext is one local product and one repository. Knowledge, Memory, and Context are capability domains over a shared evidence foundation. They are not separate products. This page is the current target. The file-based evidence core described in [Architecture](overview.md) and the session stdio contract are implemented. Memory activation, host adapters, the viewer, and Windows storage are not. The evidence core currently runs on macOS and Linux. Windows lock code is included and compiles; it has not been executed on Windows.
+LiteContext is one local product and one repository. Knowledge, Memory, and Context are capability domains over a shared evidence foundation. They are not separate products. This page is the current target. The file-based evidence core described in [Architecture](overview.md), the session stdio contract, and `lc host hook` are implemented. The hook command does not install or edit host configuration. Memory activation, the viewer, and Windows runtime verification are not. The evidence core currently runs on macOS and Linux. Windows lock code is included and compiles; it has not been executed on Windows.
 
 ## Capabilities
 
@@ -17,7 +17,7 @@ The default delivery is small: current constraints, task progress, and an index 
 
 ## Session contract
 
-`lc serve --bundle DIR` reads one JSON object per line and writes one JSON object per line. `--once` handles a single request. The operations are `search`, `show`, `record`, and `prepare`. `record` stores an event under the bundle's local `events` directory and does not add evidence. A repeated event ID with the same content is a replay; the same ID with different content is rejected. `prepare` selects task text, pinned evidence, and search hits without calling a model. Entries that do not fit the rune budget are omitted whole. Unavailable pins are omitted without their text. Delivery acknowledgement and use stay `unknown` until a host adapter records them.
+`lc serve --bundle DIR` reads one JSON object per line and writes one JSON object per line. `--once` handles a single request. The operations are `search`, `show`, `record`, and `prepare`. `record` stores an event under the bundle's local `events` directory and does not add evidence. A repeated event ID with the same content is a replay; the same ID with different content is rejected. `prepare` selects task text, pinned evidence, and search hits without calling a model. A prepared entry includes the evidence locator when it has one. Entries that do not fit the rune budget are omitted whole. Unavailable pins are omitted without their text. Delivery acknowledgement and use stay `unknown` until a host adapter records them.
 
 ## Modules
 
@@ -63,6 +63,16 @@ Capacity is calculated from the content prepared for the host, not from the numb
 
 The current snapshot limit of 64 MiB is for a bounded evidence collection. Continuous session capture requires append-only records before it is enabled.
 
+## Host hook
+
+`lc host hook --bundle DIR` reads one Codex or Claude Code hook JSON object from stdin. It does not install or edit host configuration. `SessionStart` maps to `session_start`, `UserPromptSubmit` to `prompt`, `PreCompact` to `compact`, and `Stop` or `SessionEnd` to `stop`. Any other event is ignored.
+
+The event body is the prompt, or a short source token such as `startup`. `cwd` and `transcript_path` are not stored. The event ID is `hook_` plus the SHA-256 of the kind, session ID, and body. The same payload replays; a different body is a different event.
+
+A prompt is reduced to at most 64 distinct terms and 4096 bytes before search. Events without a prompt are recorded and do not invent a query. Injection is written only for `SessionStart` and `UserPromptSubmit`, and only when preparation returns an entry. The prepare budget is 2000 Unicode code points. The JSON contains `hookSpecificOutput.hookEventName` and `hookSpecificOutput.additionalContext`. The text cites a relative locator and line. It is not an instruction. By default the owner's private records are eligible. `--visibility public|team|private` is an explicit filter, not model authorization.
+
+The process exits 0 with empty stdout when input, the bundle, or the deadline fails. A prompt waits at most 200ms. Any other known event waits at most 1 second. Exit 1 is reserved for a malformed command. Windows hook behavior has not been run on Windows.
+
 ## Prototype
 
 The prototype checks one software project handed between Codex and Claude Code. It uses synthetic project material. It does not import personal data, scan a whole account, or activate memory automatically.
@@ -78,4 +88,4 @@ The viewer has four pages:
 
 The prototype is accepted only when the record matches what the host received, required constraints are present, superseded decisions are not presented as current, and the added time stays visible. The macOS path is accepted before the Windows adapter. Windows acceptance includes a native lock, an atomic bundle commit, and the same stdio contract. Knowledge must work without Memory. Memory must accept a cited conclusion without a complete knowledge base. Context must allow either supplier to be replaced.
 
-The implementation order is the stdio contract, deterministic assembly, a thin macOS adapter, and the native Windows storage port. Model extraction and an extra index come after measured delivery.
+The stdio contract, deterministic assembly, and the one-shot hook adapter are in place. Windows runtime acceptance is still required. Model extraction and an extra index come after a measured one-shot prepare misses the hook deadline.
