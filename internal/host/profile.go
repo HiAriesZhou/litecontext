@@ -16,6 +16,8 @@ type profile struct {
 	events map[string]eventRule
 	silent map[string]bool
 	quiet  bool
+	decode func([]byte) (decodedHook, error)
+	encode func(eventName, text string) ([]byte, error)
 }
 
 // KnownHost reports whether name selects a host profile.
@@ -64,12 +66,14 @@ func codingAgentProfile(name string) profile {
 		events["BeforeAgent"] = eventRule{kind: "prompt", inject: true, deadline: promptDeadline}
 		silent["BeforeAgent"] = true
 	}
-	return profile{events: events, silent: silent}
+	return profile{events: events, silent: silent, decode: decodeCodingAgentHook, encode: injectionJSON}
 }
 
 func geminiProfile() profile {
 	return profile{
-		quiet: true,
+		quiet:  true,
+		decode: decodeCodingAgentHook,
+		encode: injectionJSON,
 		events: map[string]eventRule{
 			"BeforeAgent": {kind: "prompt", inject: true, deadline: promptDeadline},
 		},

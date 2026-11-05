@@ -65,7 +65,7 @@ The current snapshot limit of 64 MiB is for a bounded evidence collection. Conti
 
 ## Host hook
 
-`lc host hook --bundle DIR [--host codex|claude|gemini]` reads one hook JSON object from stdin. It does not install or edit host configuration. Without `--host`, `SessionStart` maps to `session_start`, `UserPromptSubmit` and Gemini CLI `BeforeAgent` to `prompt`, `PreCompact` to `compact`, and `Stop` or `SessionEnd` to `stop`. `--host gemini` maps only `BeforeAgent` to `prompt`. `PreCompress` is not an alias of `PreCompact`. Any other event is ignored.
+`lc host hook --bundle DIR [--host codex|claude|gemini]` reads one hook JSON object from stdin. The selected profile decodes that input and encodes the injection. Codex, Claude Code, and Gemini CLI currently share one JSON envelope; accepted events and stderr silence stay on the profile. It does not install or edit host configuration. Without `--host`, `SessionStart` maps to `session_start`, `UserPromptSubmit` and Gemini CLI `BeforeAgent` to `prompt`, `PreCompact` to `compact`, and `Stop` or `SessionEnd` to `stop`. `--host gemini` maps only `BeforeAgent` to `prompt`. `PreCompress` is not an alias of `PreCompact`. Any other event is ignored.
 
 The event body is the prompt, or a short source token such as `startup`. `cwd` and `transcript_path` are not stored. The event ID is `hook_` plus the SHA-256 of the kind, session ID, and body. The same payload replays; a different body is a different event.
 
