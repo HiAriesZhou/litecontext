@@ -719,3 +719,99 @@ func TestDeliveryTruncatesStoredOmissions(t *testing.T) {
 		t.Fatalf("tail: %+v", last)
 	}
 }
+
+func TestDeliveryRecordsEmittedEntries(t *testing.T) {
+	dir := fixtureBundle(t)
+	b, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded := Handle(context.Background(), b, []byte(`{"version":1,"op":"deliver","eventId":"turn-entry","delivery":{"text":"cited","selected":1,"emitted":1,"entries":[{"role":"knowledge","locator":"docs/rule.md","ref":{"sourceId":"src_notes","itemId":"itm_rule","recordHash":"sha256:abc","startLine":2,"endLine":4}}]}}`))
+	if !recorded.OK {
+		t.Fatalf("deliver: %+v", recorded)
+	}
+	stored, err := ReadEmission(dir, "turn-entry")
+	if err != nil || stored.Entries == nil || len(*stored.Entries) != 1 {
+		t.Fatalf("stored entries: %+v %v", stored.Entries, err)
+	}
+	item := (*stored.Entries)[0]
+	if item.Role != "knowledge" || item.Locator != "docs/rule.md" || item.Ref == nil || item.Ref.SourceID != "src_notes" || item.Ref.ItemID != "itm_rule" || item.Ref.RecordHash != "sha256:abc" || item.Ref.StartLine != 2 || item.Ref.EndLine != 4 {
+		t.Fatalf("entry: %+v", item)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "events", "delivery", "turn-entry.json"))
+	if err != nil || bytes.Contains(raw, []byte(`"text":"cited"`)) == false || bytes.Contains(raw, []byte("docs/rule.md")) == false {
+		t.Fatalf("file: %s %v", raw, err)
+	}
+	empty := Handle(context.Background(), b, []byte(`{"version":1,"op":"deliver","eventId":"turn-empty-entries","delivery":{"text":"all","selected":1,"emitted":1,"entries":[]}}`))
+	if !empty.OK {
+		t.Fatalf("empty: %+v", empty)
+	}
+	stored, err = ReadEmission(dir, "turn-empty-entries")
+	if err != nil || stored.Entries == nil || len(*stored.Entries) != 0 {
+		t.Fatalf("empty entries: %+v %v", stored.Entries, err)
+	}
+	raw, err = os.ReadFile(filepath.Join(dir, "events", "delivery", "turn-empty-entries.json"))
+	if err != nil || !bytes.Contains(raw, []byte(`"entries":[]`)) || bytes.Contains(raw, []byte(`"entries":null`)) {
+		t.Fatalf("empty encoding: %s %v", raw, err)
+	}
+	legacy := []byte("{\"eventId\":\"turn-old-entry\",\"text\":\"legacy\",\"selected\":1,\"emitted\":1,\"acknowledged\":\"unknown\",\"used\":\"unknown\"}\n")
+	if err = os.WriteFile(filepath.Join(dir, "events", "delivery", "turn-old-entry.json"), legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stored, err = ReadEmission(dir, "turn-old-entry")
+	if err != nil || stored.Text != "legacy" || stored.Entries != nil {
+		t.Fatalf("legacy: %+v %v", stored, err)
+	}
+	rejected := Handle(context.Background(), b, []byte(`{"version":1,"op":"deliver","eventId":"turn-bad-entry","delivery":{"text":"nope","selected":1,"emitted":1,"entries":null}}`))
+	if rejected.OK {
+		t.Fatal("accepted null entries")
+	}
+	rejected = Handle(context.Background(), b, []byte(`{"version":1,"op":"deliver","eventId":"turn-bad-role","delivery":{"text":"nope","selected":1,"emitted":1,"entries":[{"role":"note"}]}}`))
+	if rejected.OK {
+		t.Fatal("accepted an entry role that is not emitted context")
+	}
+}
+
+func TestDeliveryTruncatesStoredEntries(t *testing.T) {
+	dir := fixtureBundle(t)
+	items := make([]EmittedEntry, maxStoredEntries+1)
+	for i := range items {
+		items[i] = EmittedEntry{Role: "knowledge", Locator: "docs/rule.md", Ref: &Ref{SourceID: "src_notes", ItemID: "itm_rule", RecordHash: "sha256:abc"}}
+	}
+	err := SaveEmission(t.Context(), dir, "turn-entry-cap", DeliveryInput{Text: "cited", Selected: len(items), Emitted: len(items), Entries: &items})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := ReadEmission(dir, "turn-entry-cap")
+	if err != nil || stored.Entries == nil || len(*stored.Entries) != maxStoredEntries+1 {
+		t.Fatalf("len=%v err=%v", stored.Entries, err)
+	}
+	last := (*stored.Entries)[maxStoredEntries]
+	if last.Role != "omission" || last.Reason != "truncated" || last.Ref != nil {
+		t.Fatalf("tail: %+v", last)
+	}
+}
+
+func TestDeliveryShrinksEntriesToTheFileLimit(t *testing.T) {
+	dir := fixtureBundle(t)
+	items := make([]EmittedEntry, 20)
+	for i := range items {
+		items[i] = EmittedEntry{Role: "knowledge", Locator: strings.Repeat("a", 8000), Ref: &Ref{SourceID: "src_notes", ItemID: "itm_rule", RecordHash: "sha256:abc"}}
+	}
+	err := SaveEmission(t.Context(), dir, "turn-entry-bytes", DeliveryInput{Text: "cited", Selected: len(items), Emitted: len(items), Entries: &items})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := ReadEmission(dir, "turn-entry-bytes")
+	if err != nil || stored.Entries == nil || len(*stored.Entries) < 2 || len(*stored.Entries) >= len(items) {
+		t.Fatalf("len=%v err=%v", stored.Entries, err)
+	}
+	last := (*stored.Entries)[len(*stored.Entries)-1]
+	if last.Reason != "truncated" {
+		t.Fatalf("tail: %+v", last)
+	}
+	info, err := os.Stat(filepath.Join(dir, "events", "delivery", "turn-entry-bytes.json"))
+	if err != nil || info.Size() > int64(maxEmissionFileBytes) {
+		t.Fatalf("size=%v err=%v", info, err)
+	}
+}

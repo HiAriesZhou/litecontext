@@ -180,6 +180,7 @@ func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, st
 			Emitted:   pack.Delivery.Emitted,
 			ElapsedMs: elapsedMilliseconds(started),
 			Omissions: deliveryOmissions(pack.Omissions),
+			Entries:   deliveryEntries(pack.Entries),
 		},
 	})
 	if err != nil || !session.Handle(ctx, store, deliveryLine).OK {
@@ -301,5 +302,18 @@ func elapsedMilliseconds(started time.Time) *int {
 func deliveryOmissions(omissions []session.Omission) *[]session.Omission {
 	copied := make([]session.Omission, len(omissions))
 	copy(copied, omissions)
+	return &copied
+}
+
+func deliveryEntries(entries []session.Entry) *[]session.EmittedEntry {
+	copied := make([]session.EmittedEntry, len(entries))
+	for i, entry := range entries {
+		item := session.EmittedEntry{Role: entry.Role, Locator: entry.Locator}
+		if entry.Ref != nil {
+			ref := *entry.Ref
+			item.Ref = &ref
+		}
+		copied[i] = item
+	}
 	return &copied
 }

@@ -23,10 +23,13 @@ func TestRenderEscapesStoredTextAndNamesTheNextAction(t *testing.T) {
 			Deliveries: []session.Emission{{
 				EventID: "turn-view", Text: "<script>alert(1)</script>", Selected: 2, Emitted: 1, ElapsedMs: &elapsed,
 			}, {
-				EventID: "turn-none", Text: "all of it", Selected: 1, Emitted: 1, Omissions: omissionsOf(),
+				EventID: "turn-none", Text: "all of it", Selected: 1, Emitted: 1, Omissions: omissionsOf(), Entries: entriesOf(),
 			}, {
 				EventID: "turn-omit", Text: "part of it", Selected: 2, Emitted: 1,
 				Omissions: omissionsOf(session.Omission{Role: "knowledge", Locator: "docs/rule.md", Reason: "budget"}),
+			}, {
+				EventID: "turn-source", Text: "cited", Selected: 1, Emitted: 1,
+				Entries: entriesOf(session.EmittedEntry{Role: "knowledge", Locator: "docs/rule.md", Ref: &session.Ref{SourceID: "src_notes", ItemID: "itm_rule", RecordHash: "sha256:abc"}}),
 			}},
 			Memories: []session.MemoryRecord{
 				{ID: "mem-new", Status: "candidate", Scope: "project", Visibility: "private", Text: `keep & "quoted"`, Evidence: []session.Ref{{SourceID: "src_notes", ItemID: "itm_rule", RecordHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}},
@@ -57,6 +60,8 @@ func TestRenderEscapesStoredTextAndNamesTheNextAction(t *testing.T) {
 		"Source version unknown. Omission reason unknown.",
 		"Nothing omitted.",
 		"Omitted: knowledge budget docs/rule.md.",
+		"Emitted: knowledge src_notes itm_rule sha256:abc docs/rule.md.",
+		"No emitted sources.",
 		"notes",
 		"markdown",
 		"active",
@@ -197,5 +202,10 @@ func TestWriteReplacesNameWithoutChangingBundleInode(t *testing.T) {
 
 func omissionsOf(items ...session.Omission) *[]session.Omission {
 	copied := append([]session.Omission(nil), items...)
+	return &copied
+}
+
+func entriesOf(items ...session.EmittedEntry) *[]session.EmittedEntry {
+	copied := append([]session.EmittedEntry(nil), items...)
 	return &copied
 }

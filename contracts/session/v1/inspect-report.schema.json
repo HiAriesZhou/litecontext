@@ -77,7 +77,8 @@
         "acknowledged": { "enum": ["unknown"] },
         "used": { "enum": ["unknown"] },
         "elapsedMs": { "type": "integer" },
-        "omissions": { "type": "array", "items": { "$ref": "#/$defs/omission" } }
+        "omissions": { "type": "array", "items": { "$ref": "#/$defs/omission" } },
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/emittedEntry" } }
       }
     },
     "omission": {
@@ -89,6 +90,17 @@
         "ref": { "$ref": "#/$defs/ref" },
         "locator": { "type": "string" },
         "reason": { "enum": ["budget", "unavailable", "truncated"] }
+      }
+    },
+    "emittedEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role"],
+      "properties": {
+        "role": { "type": "string" },
+        "locator": { "type": "string" },
+        "ref": { "$ref": "#/$defs/ref" },
+        "reason": { "enum": ["truncated"] }
       }
     },
     "ref": {
