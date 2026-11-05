@@ -77,7 +77,7 @@ The process exits 0 with empty stdout when input, the bundle, or the deadline fa
 
 The prototype checks one software project handed between Codex and Claude Code. It uses synthetic project material. It does not import personal data, scan a whole account, or activate memory automatically.
 
-One sample contains a changed document, a superseded decision, a changed working file, a duplicate event, and a failed memory update. The same evidence is compared in three modes: Knowledge only, Memory only, and Context composed from both plus task state.
+`TestPrototypeHandoffKeepsCurrentConstraints` runs that sample: a changed document, a superseded decision, a changed working file, a duplicate event, and a rejected memory update. It prepares knowledge without memory, memory without a knowledge hit, and context composed from the refreshed document, the confirmed memory, and the task. The text injected by the hook is the stored delivery.
 
 `lc inspect` is not this viewer. The viewer has four pages:
 
