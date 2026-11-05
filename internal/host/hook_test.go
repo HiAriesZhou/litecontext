@@ -668,3 +668,56 @@ func TestOtherGeminiEventsStayIgnored(t *testing.T) {
 		t.Fatalf("ignored events stored: %s", eventText(t, dir))
 	}
 }
+
+func TestHostProfilesSeparateCodexClaudeAndGemini(t *testing.T) {
+	dir := fixtureBundle(t)
+	stdout, note := HookFor(context.Background(), dir, "", "codex", payload(t, map[string]any{
+		"hook_event_name": "BeforeAgent",
+		"session_id":      "codex-ignores-gemini",
+		"prompt":          "secret constraint",
+	}))
+	if stdout != nil || note != "" || eventCount(t, dir) != 0 {
+		t.Fatalf("codex accepted BeforeAgent note=%q stdout=%s", note, stdout)
+	}
+	stdout, note = HookFor(context.Background(), dir, "", "claude", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "claude-prompt",
+		"prompt":          "secret constraint",
+	}))
+	if note != "" || !cited(stdout, "private.md") {
+		t.Fatalf("claude note=%q stdout=%s", note, stdout)
+	}
+	stdout, note = HookFor(context.Background(), filepath.Join(t.TempDir(), "missing"), "", "gemini", payload(t, map[string]any{
+		"hook_event_name": "BeforeAgent",
+		"session_id":      "gemini-missing",
+		"prompt":          "secret constraint",
+	}))
+	if stdout != nil || note != "" {
+		t.Fatalf("gemini failure note=%q stdout=%s", note, stdout)
+	}
+	stdout, note = HookFor(context.Background(), dir, "", "gemini", payload(t, map[string]any{
+		"hook_event_name": "SessionStart",
+		"session_id":      "gemini-start",
+		"source":          "startup",
+	}))
+	if stdout != nil || note != "" {
+		t.Fatalf("gemini session note=%q stdout=%s", note, stdout)
+	}
+	if !KnownHost("codex") || !KnownHost("claude") || !KnownHost("gemini") || !KnownHost("") || KnownHost("cursor") {
+		t.Fatal("host names")
+	}
+	if Diagnostic("gemini", "BeforeAgent") || Diagnostic("", "BeforeAgent") || !Diagnostic("", "UserPromptSubmit") || !Diagnostic("codex", "UserPromptSubmit") {
+		t.Fatal("diagnostic policy")
+	}
+}
+
+func TestBeforeAgentFailureStaysSilentWithoutHostFlag(t *testing.T) {
+	stdout, note := Hook(context.Background(), filepath.Join(t.TempDir(), "missing"), "", payload(t, map[string]any{
+		"hook_event_name": "BeforeAgent",
+		"session_id":      "gemini-auto",
+		"prompt":          "secret constraint",
+	}))
+	if stdout != nil || note != "" {
+		t.Fatalf("note=%q stdout=%s", note, stdout)
+	}
+}

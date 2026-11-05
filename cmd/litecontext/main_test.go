@@ -352,6 +352,89 @@ func TestInspectCommandReportsTheDelivery(t *testing.T) {
 	}
 }
 
+func TestHostFlagSelectsTheGeminiProfile(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "missing")
+	if err := run([]string{"host", "hook", "--bundle", dir, "--host", "cursor"}); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("host: %v", err)
+	}
+	raw, _ := json.Marshal(map[string]string{
+		"hook_event_name": "BeforeAgent",
+		"session_id":      "gemini-cli",
+		"prompt":          "shared rule",
+	})
+	stdout, stderr := captureOutputs(t, string(raw), func() error {
+		return run([]string{"host", "hook", "--bundle", dir, "--host", "gemini"})
+	})
+	if stdout != "" || stderr != "" {
+		t.Fatalf("gemini stdout=%q stderr=%q", stdout, stderr)
+	}
+	stdout, stderr = captureOutputs(t, string(raw), func() error {
+		return run([]string{"host", "hook", "--bundle", dir, "--host", "codex"})
+	})
+	if stdout != "" || stderr != "" {
+		t.Fatalf("codex ignored gemini event stdout=%q stderr=%q", stdout, stderr)
+	}
+	prompt, _ := json.Marshal(map[string]string{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "codex-cli",
+		"prompt":          "shared rule",
+	})
+	stdout, stderr = captureOutputs(t, string(prompt), func() error {
+		return run([]string{"host", "hook", "--bundle", dir})
+	})
+	if stdout != "" || !strings.Contains(stderr, "hook skipped: bundle unavailable") {
+		t.Fatalf("default stdout=%q stderr=%q", stdout, stderr)
+	}
+}
+
+func captureOutputs(t *testing.T, payload string, operation func() error) (string, string) {
+	t.Helper()
+	input, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = writer.WriteString(payload); err != nil {
+		t.Fatal(err)
+	}
+	if err = writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	previousIn := os.Stdin
+	os.Stdin = input
+	defer func() {
+		os.Stdin = previousIn
+		input.Close()
+	}()
+	outReader, outWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	errReader, errWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousOut, previousErr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = outWriter, errWriter
+	defer func() {
+		os.Stdout, os.Stderr = previousOut, previousErr
+	}()
+	runErr := operation()
+	outWriter.Close()
+	errWriter.Close()
+	stdout, readErr := io.ReadAll(outReader)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	stderr, readErr := io.ReadAll(errReader)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+	return string(stdout), string(stderr)
+}
+
 func withStdin(t *testing.T, payload string, operation func() error) string {
 	t.Helper()
 	reader, writer, err := os.Pipe()
