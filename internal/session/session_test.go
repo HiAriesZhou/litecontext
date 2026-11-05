@@ -644,3 +644,19 @@ func TestPrepareEmptyOmissionsIsArray(t *testing.T) {
 		t.Fatalf("wire: %s", out.Bytes())
 	}
 }
+
+func TestSearchMissIsEmptyArray(t *testing.T) {
+	dir := fixtureBundle(t)
+	b, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err = Once(context.Background(), strings.NewReader("{\"version\":1,\"op\":\"search\",\"query\":\"zzzz-no-such-term\"}\n"), &out, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(out.Bytes(), []byte(`"result":[]`)) {
+		t.Fatalf("wire: %s", out.Bytes())
+	}
+}

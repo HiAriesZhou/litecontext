@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/HiAriesZhou/litecontext/internal/bundle"
 )
 
 func TestContractSchemasMatchGoTypes(t *testing.T) {
@@ -14,6 +16,7 @@ func TestContractSchemasMatchGoTypes(t *testing.T) {
 	checkSchema(t, Response{}, "response.schema.json")
 	checkSchema(t, Report{}, "inspect-report.schema.json")
 	checkSchema(t, Pack{}, "prepare-pack.schema.json")
+	checkSchema(t, bundle.Evidence{}, "evidence.schema.json")
 }
 
 func checkSchema(t *testing.T, value any, name string) {
