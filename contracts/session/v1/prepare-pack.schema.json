@@ -30,7 +30,8 @@
       "properties": {
         "role": { "type": "string" },
         "ref": { "$ref": "#/$defs/ref" },
-        "reason": { "type": "string" }
+        "locator": { "type": "string" },
+        "reason": { "enum": ["budget", "unavailable", "truncated"] }
       }
     },
     "delivery": {

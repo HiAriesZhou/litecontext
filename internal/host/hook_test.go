@@ -561,3 +561,24 @@ func TestHookInjectsConfirmedMemoryOnly(t *testing.T) {
 		t.Fatalf("public note=%q stdout=%s", note, stdout)
 	}
 }
+
+func TestHookRecordsWhetherAnythingWasOmitted(t *testing.T) {
+	dir := fixtureBundle(t)
+	stdout, note := Hook(context.Background(), dir, "", payload(t, map[string]any{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id":      "sess-omit",
+		"prompt":          "secret constraint",
+	}))
+	if note != "" || stdout == nil {
+		t.Fatalf("note=%q stdout=%s", note, stdout)
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "events", "delivery"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("delivery files: %v %v", entries, err)
+	}
+	id := strings.TrimSuffix(entries[0].Name(), ".json")
+	stored, err := session.ReadEmission(dir, id)
+	if err != nil || stored.Omissions == nil {
+		t.Fatalf("omissions: %+v %v", stored.Omissions, err)
+	}
+}

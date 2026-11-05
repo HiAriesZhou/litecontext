@@ -76,7 +76,19 @@
         "emitted": { "type": "integer" },
         "acknowledged": { "enum": ["unknown"] },
         "used": { "enum": ["unknown"] },
-        "elapsedMs": { "type": "integer" }
+        "elapsedMs": { "type": "integer" },
+        "omissions": { "type": "array", "items": { "$ref": "#/$defs/omission" } }
+      }
+    },
+    "omission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason"],
+      "properties": {
+        "role": { "type": "string" },
+        "ref": { "$ref": "#/$defs/ref" },
+        "locator": { "type": "string" },
+        "reason": { "enum": ["budget", "unavailable", "truncated"] }
       }
     },
     "ref": {
