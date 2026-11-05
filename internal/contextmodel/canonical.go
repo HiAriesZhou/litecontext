@@ -537,7 +537,48 @@ func validateRelativeLocator(value string) error {
 			return fmt.Errorf("portable locator contains a control character")
 		}
 	}
+	for _, segment := range strings.Split(value, "/") {
+		if err := windowsPortableSegment(segment); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// windowsPortableSegment rejects a path segment that the Win32 file APIs
+// cannot store distinctly. The check is applied on every platform so a
+// bundle collected on macOS or Linux can be opened on Windows.
+func windowsPortableSegment(segment string) error {
+	for _, character := range segment {
+		switch character {
+		case '<', '>', ':', '"', '|', '?', '*':
+			return fmt.Errorf("portable locator contains a character Windows cannot store")
+		}
+	}
+	if strings.TrimRight(segment, " .") != segment {
+		return fmt.Errorf("portable locator segment must not end with a space or period")
+	}
+	stem := segment
+	if dot := strings.IndexByte(segment, '.'); dot >= 0 {
+		stem = segment[:dot]
+	}
+	if windowsReservedStem(stem) {
+		return fmt.Errorf("portable locator uses a Windows reserved device name")
+	}
+	return nil
+}
+
+func windowsReservedStem(stem string) bool {
+	switch strings.ToLower(stem) {
+	case "con", "prn", "aux", "nul":
+		return true
+	}
+	if len(stem) != 4 {
+		return false
+	}
+	prefix := strings.ToLower(stem[:3])
+	digit := stem[3]
+	return (prefix == "com" || prefix == "lpt") && digit >= '1' && digit <= '9'
 }
 
 func validateExtensions(extensions map[string]any) error {
