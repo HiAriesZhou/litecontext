@@ -660,3 +660,62 @@ func TestSearchMissIsEmptyArray(t *testing.T) {
 		t.Fatalf("wire: %s", out.Bytes())
 	}
 }
+
+func TestDeliveryRecordsOmissionsAndKeepsOlderRecords(t *testing.T) {
+	dir := fixtureBundle(t)
+	b, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded := Handle(context.Background(), b, []byte(`{"version":1,"op":"deliver","eventId":"turn-omit","delivery":{"text":"cited","selected":2,"emitted":1,"omissions":[{"role":"knowledge","locator":"docs/rule.md","reason":"budget"}]}}`))
+	if !recorded.OK {
+		t.Fatalf("deliver: %+v", recorded)
+	}
+	stored, err := ReadEmission(dir, "turn-omit")
+	if err != nil || stored.Omissions == nil || len(*stored.Omissions) != 1 || (*stored.Omissions)[0].Role != "knowledge" || (*stored.Omissions)[0].Locator != "docs/rule.md" || (*stored.Omissions)[0].Reason != "budget" {
+		t.Fatalf("stored omissions: %+v %v", stored.Omissions, err)
+	}
+	empty := Handle(context.Background(), b, []byte(`{"version":1,"op":"deliver","eventId":"turn-none","delivery":{"text":"all","selected":1,"emitted":1,"omissions":[]}}`))
+	if !empty.OK {
+		t.Fatalf("empty: %+v", empty)
+	}
+	stored, err = ReadEmission(dir, "turn-none")
+	if err != nil || stored.Omissions == nil || len(*stored.Omissions) != 0 {
+		t.Fatalf("empty omissions: %+v %v", stored.Omissions, err)
+	}
+	legacy := []byte("{\"eventId\":\"turn-old\",\"text\":\"legacy\",\"selected\":1,\"emitted\":1,\"acknowledged\":\"unknown\",\"used\":\"unknown\"}\n")
+	if err = os.WriteFile(filepath.Join(dir, "events", "delivery", "turn-old.json"), legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stored, err = ReadEmission(dir, "turn-old")
+	if err != nil || stored.Text != "legacy" || stored.Omissions != nil {
+		t.Fatalf("legacy: %+v %v", stored, err)
+	}
+	rejected := Handle(context.Background(), b, []byte(`{"version":1,"op":"deliver","eventId":"turn-bad","delivery":{"text":"nope","selected":1,"emitted":1,"omissions":[{"role":"knowledge","reason":"because"}]}}`))
+	if rejected.OK {
+		t.Fatal("accepted an omission reason that is not budget, unavailable, or truncated")
+	}
+	if _, err = ReadEmission(dir, "turn-bad"); err == nil {
+		t.Fatal("invalid omission created a delivery")
+	}
+}
+
+func TestDeliveryTruncatesStoredOmissions(t *testing.T) {
+	dir := fixtureBundle(t)
+	items := make([]Omission, maxStoredOmissions+1)
+	for i := range items {
+		items[i] = Omission{Role: "knowledge", Reason: "budget", Locator: "docs/rule.md"}
+	}
+	err := SaveEmission(t.Context(), dir, "turn-cap", DeliveryInput{Text: "cited", Selected: len(items) + 1, Emitted: 1, Omissions: &items})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := ReadEmission(dir, "turn-cap")
+	if err != nil || stored.Omissions == nil || len(*stored.Omissions) != maxStoredOmissions+1 {
+		t.Fatalf("len=%v err=%v", stored.Omissions, err)
+	}
+	last := (*stored.Omissions)[maxStoredOmissions]
+	if last.Role != "omission" || last.Reason != "truncated" {
+		t.Fatalf("tail: %+v", last)
+	}
+}

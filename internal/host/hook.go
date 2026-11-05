@@ -179,6 +179,7 @@ func Hook(ctx context.Context, dir, visibility string, input []byte) ([]byte, st
 			Selected:  pack.Delivery.Selected,
 			Emitted:   pack.Delivery.Emitted,
 			ElapsedMs: elapsedMilliseconds(started),
+			Omissions: deliveryOmissions(pack.Omissions),
 		},
 	})
 	if err != nil || !session.Handle(ctx, store, deliveryLine).OK {
@@ -295,4 +296,10 @@ func elapsedMilliseconds(started time.Time) *int {
 		elapsed = 600000
 	}
 	return &elapsed
+}
+
+func deliveryOmissions(omissions []session.Omission) *[]session.Omission {
+	copied := make([]session.Omission, len(omissions))
+	copy(copied, omissions)
+	return &copied
 }

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/HiAriesZhou/litecontext/internal/strictjson"
 )
@@ -19,13 +20,14 @@ const maxEmissionBytes = 64 << 10
 // Emission is the delivery record for one host injection.
 // Emitted is the number of entries returned. Text is the rendered context.
 type Emission struct {
-	EventID      string `json:"eventId"`
-	Text         string `json:"text"`
-	Selected     int    `json:"selected"`
-	Emitted      int    `json:"emitted"`
-	Acknowledged string `json:"acknowledged" enum:"unknown"`
-	Used         string `json:"used" enum:"unknown"`
-	ElapsedMs    *int   `json:"elapsedMs,omitempty"`
+	EventID      string      `json:"eventId"`
+	Text         string      `json:"text"`
+	Selected     int         `json:"selected"`
+	Emitted      int         `json:"emitted"`
+	Acknowledged string      `json:"acknowledged" enum:"unknown"`
+	Used         string      `json:"used" enum:"unknown"`
+	ElapsedMs    *int        `json:"elapsedMs,omitempty"`
+	Omissions    *[]Omission `json:"omissions,omitempty"`
 }
 
 // SaveEmission records the injection returned to the host for one event.
@@ -44,12 +46,16 @@ func SaveEmission(ctx context.Context, bundleDir, eventID string, input Delivery
 	if input.ElapsedMs != nil && (*input.ElapsedMs < 0 || *input.ElapsedMs > 600000) {
 		return fmt.Errorf("invalid delivery")
 	}
+	omissions, err := storedOmissions(input.Omissions)
+	if err != nil {
+		return err
+	}
 	if err := plainText(input.Text, maxEmissionBytes); err != nil {
 		return fmt.Errorf("invalid delivery")
 	}
 	payload, err := canonicalEmission(Emission{
 		EventID: eventID, Text: input.Text, Selected: input.Selected, Emitted: input.Emitted,
-		Acknowledged: "unknown", Used: "unknown", ElapsedMs: input.ElapsedMs,
+		Acknowledged: "unknown", Used: "unknown", ElapsedMs: input.ElapsedMs, Omissions: omissions,
 	})
 	if err != nil {
 		return fmt.Errorf("invalid delivery")
@@ -73,6 +79,56 @@ func SaveEmission(ctx context.Context, bundleDir, eventID string, input Delivery
 	}
 	defer delivery.Close()
 	return replaceFile(delivery, eventID+".json", append(payload, '\n'))
+}
+
+const maxStoredOmissions = 100
+
+func storedOmissions(input *[]Omission) (*[]Omission, error) {
+	if input == nil {
+		return nil, nil
+	}
+	for _, item := range *input {
+		if err := validOmission(item); err != nil {
+			return nil, err
+		}
+	}
+	list := make([]Omission, 0, len(*input))
+	list = append(list, (*input)...)
+	if len(list) > maxStoredOmissions {
+		list = append(list[:maxStoredOmissions], Omission{Role: "omission", Reason: "truncated"})
+	}
+	return &list, nil
+}
+
+func validOmission(item Omission) error {
+	switch item.Role {
+	case "task", "memory", "pin", "knowledge", "omission":
+	default:
+		return fmt.Errorf("invalid delivery")
+	}
+	switch item.Reason {
+	case "budget", "unavailable", "truncated":
+	default:
+		return fmt.Errorf("invalid delivery")
+	}
+	if item.Reason == "truncated" && item.Role != "omission" {
+		return fmt.Errorf("invalid delivery")
+	}
+	if len(item.Locator) > 8192 || strings.Contains(item.Locator, "\\") || strings.Contains(item.Locator, "\n") {
+		return fmt.Errorf("invalid delivery")
+	}
+	for _, character := range item.Locator {
+		if character < 0x20 {
+			return fmt.Errorf("invalid delivery")
+		}
+	}
+	if item.Ref == nil {
+		return nil
+	}
+	if item.Ref.SourceID == "" || item.Ref.ItemID == "" || len(item.Ref.SourceID) > 128 || len(item.Ref.ItemID) > 256 {
+		return fmt.Errorf("invalid delivery")
+	}
+	return nil
 }
 
 func canonicalEmission(emission Emission) ([]byte, error) {
@@ -144,6 +200,13 @@ func ReadEmission(bundleDir, eventID string) (Emission, error) {
 	}
 	if emission.EventID != eventID || emission.Text == "" || emission.Selected < 0 || emission.Emitted < 0 || emission.Emitted > emission.Selected || emission.Acknowledged != "unknown" || emission.Used != "unknown" || (emission.ElapsedMs != nil && (*emission.ElapsedMs < 0 || *emission.ElapsedMs > 600000)) {
 		return Emission{}, fmt.Errorf("invalid delivery")
+	}
+	if emission.Omissions != nil {
+		for _, item := range *emission.Omissions {
+			if err = validOmission(item); err != nil {
+				return Emission{}, err
+			}
+		}
 	}
 	return emission, nil
 }

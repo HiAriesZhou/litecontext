@@ -22,6 +22,11 @@ func TestRenderEscapesStoredTextAndNamesTheNextAction(t *testing.T) {
 			Failures: []string{"memory unavailable"},
 			Deliveries: []session.Emission{{
 				EventID: "turn-view", Text: "<script>alert(1)</script>", Selected: 2, Emitted: 1, ElapsedMs: &elapsed,
+			}, {
+				EventID: "turn-none", Text: "all of it", Selected: 1, Emitted: 1, Omissions: omissionsOf(),
+			}, {
+				EventID: "turn-omit", Text: "part of it", Selected: 2, Emitted: 1,
+				Omissions: omissionsOf(session.Omission{Role: "knowledge", Locator: "docs/rule.md", Reason: "budget"}),
 			}},
 			Memories: []session.MemoryRecord{
 				{ID: "mem-new", Status: "candidate", Scope: "project", Visibility: "private", Text: `keep & "quoted"`, Evidence: []session.Ref{{SourceID: "src_notes", ItemID: "itm_rule", RecordHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}},
@@ -50,6 +55,8 @@ func TestRenderEscapesStoredTextAndNamesTheNextAction(t *testing.T) {
 		"turn-view selected=2 emitted=1 elapsed=12ms",
 		"Acknowledged unknown. Used unknown.",
 		"Source version unknown. Omission reason unknown.",
+		"Nothing omitted.",
+		"Omitted: knowledge budget docs/rule.md.",
 		"notes",
 		"markdown",
 		"active",
@@ -186,4 +193,9 @@ func TestWriteReplacesNameWithoutChangingBundleInode(t *testing.T) {
 	if err != nil || strings.Contains(string(replaced), "previous") || !strings.Contains(string(replaced), "Generation 3.") {
 		t.Fatalf("replaced: %s %v", replaced, err)
 	}
+}
+
+func omissionsOf(items ...session.Omission) *[]session.Omission {
+	copied := append([]session.Omission(nil), items...)
+	return &copied
 }
