@@ -238,7 +238,7 @@ func prepare(ctx context.Context, b *bundle.Bundle, request Request) (Pack, erro
 	}
 	pack := Pack{Entries: []Entry{}, Omissions: []Omission{}, Delivery: Delivery{Acknowledged: "unknown", Used: "unknown"}}
 	var candidates []Entry
-	var omissions []Omission
+	omissions := []Omission{}
 	if text := taskText(task); text != "" {
 		candidates = append(candidates, Entry{Role: "task", Text: text})
 	}

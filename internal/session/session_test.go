@@ -628,3 +628,19 @@ func eventNames(entries []os.DirEntry) []string {
 	}
 	return names
 }
+
+func TestPrepareEmptyOmissionsIsArray(t *testing.T) {
+	dir := fixtureBundle(t)
+	b, err := bundle.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err = Once(context.Background(), strings.NewReader("{\"version\":1,\"op\":\"prepare\"}\n"), &out, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(out.Bytes(), []byte(`"omissions":[]`)) {
+		t.Fatalf("wire: %s", out.Bytes())
+	}
+}
