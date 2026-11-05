@@ -61,4 +61,7 @@ func TestBeforeAgentUsesThePromptDeadline(t *testing.T) {
 			t.Fatalf("%s deadline %s", name, Deadline(name))
 		}
 	}
+	if DeadlineFor("gemini", "BeforeAgent") != 200*time.Millisecond || DeadlineFor("codex", "BeforeAgent") != time.Second {
+		t.Fatalf("profile deadlines gemini=%s codex=%s", DeadlineFor("gemini", "BeforeAgent"), DeadlineFor("codex", "BeforeAgent"))
+	}
 }
