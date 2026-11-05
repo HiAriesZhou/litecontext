@@ -202,3 +202,81 @@ func TestProducerRejectsCredentialsInPortableURLsAtomically(t *testing.T) {
 		}
 	}
 }
+
+func TestRejectCaseFoldedPaths(t *testing.T) {
+	conflict := map[string]contextmodel.CanonicalContextItem{
+		"upper": {Provenance: contextmodel.CanonicalProvenance{Locator: "Docs/Readme.md"}},
+		"lower": {Provenance: contextmodel.CanonicalProvenance{Locator: "docs/readme.md"}},
+	}
+	err := rejectCaseFoldedPaths(conflict)
+	if err == nil || !strings.Contains(err.Error(), "Docs/Readme.md") || !strings.Contains(err.Error(), "docs/readme.md") {
+		t.Fatalf("case-only paths: %v", err)
+	}
+	distinct := map[string]contextmodel.CanonicalContextItem{
+		"readme": {Provenance: contextmodel.CanonicalProvenance{Locator: "docs/readme.md"}},
+		"guide":  {Provenance: contextmodel.CanonicalProvenance{Locator: "docs/guide.md"}},
+		"blank":  {Provenance: contextmodel.CanonicalProvenance{Locator: ""}},
+		"also":   {Provenance: contextmodel.CanonicalProvenance{Locator: ""}},
+	}
+	if err = rejectCaseFoldedPaths(distinct); err != nil {
+		t.Fatal(err)
+	}
+	if simpleFoldKey("commit/ABC") != simpleFoldKey("commit/abc") || simpleFoldKey("commit/abc") == simpleFoldKey("commit/abd") {
+		t.Fatal("simple case fold key mismatch")
+	}
+	same := map[string]contextmodel.CanonicalContextItem{
+		"alpha": {Provenance: contextmodel.CanonicalProvenance{Locator: "docs/readme.md"}},
+		"beta":  {Provenance: contextmodel.CanonicalProvenance{Locator: "docs/readme.md"}},
+	}
+	if err = rejectCaseFoldedPaths(same); err == nil {
+		t.Fatal("accepted two items with the same locator")
+	}
+	samples := []string{"Note.md", "note.md", "NOTE.MD", "docs/Readme.md", "docs/readme.md", "commit/AbC", "commit/abc", "commit/abd", "ß.md", "ss.md"}
+	for _, left := range samples {
+		for _, right := range samples {
+			folded := simpleFoldKey(left) == simpleFoldKey(right)
+			if folded != strings.EqualFold(left, right) {
+				t.Fatalf("fold key disagrees with EqualFold for %q and %q", left, right)
+			}
+		}
+	}
+}
+
+func TestImportRejectsCaseOnlyPathCollision(t *testing.T) {
+	b := newBundle(t)
+	source, err := b.AddProducer(context.Background(), "producer", testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := source.Record.ID
+	original := batchBytes(t, "snapshot", []contextmodel.CanonicalContextItem{producerItem(id, "Note.md", "Upper")}, nil)
+	if _, err = b.Import(context.Background(), id, original, testNow); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, b.Dir())
+	collision := batchBytes(t, "snapshot", []contextmodel.CanonicalContextItem{
+		producerItem(id, "Note.md", "Upper"),
+		producerItem(id, "note.md", "Lower"),
+	}, nil)
+	if _, err = b.Import(context.Background(), id, collision, testNow.Add(time.Hour)); err == nil {
+		t.Fatal("accepted paths that differ only by case")
+	}
+	if !equalTrees(before, snapshotTree(t, b.Dir())) {
+		t.Fatal("case collision partially committed")
+	}
+	added := batchBytes(t, "incremental", []contextmodel.CanonicalContextItem{producerItem(id, "note.md", "Lower")}, nil)
+	if _, err = b.Import(context.Background(), id, added, testNow.Add(2*time.Hour)); err == nil {
+		t.Fatal("incremental import accepted a case-only path")
+	}
+	if !equalTrees(before, snapshotTree(t, b.Dir())) {
+		t.Fatal("incremental case collision partially committed")
+	}
+	distinct := batchBytes(t, "snapshot", []contextmodel.CanonicalContextItem{
+		producerItem(id, "docs/readme.md", "Read me"),
+		producerItem(id, "docs/guide.md", "Guide"),
+	}, nil)
+	result, err := b.Import(context.Background(), id, distinct, testNow.Add(3*time.Hour))
+	if err != nil || result.Added != 2 || result.Removed != 1 {
+		t.Fatalf("distinct paths: %v %v", result, err)
+	}
+}
