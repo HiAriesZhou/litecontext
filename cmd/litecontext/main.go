@@ -37,6 +37,8 @@ func run(arguments []string) error {
 		return runServe(arguments[1:])
 	case "host":
 		return runHost(arguments[1:])
+	case "inspect":
+		return runInspect(arguments[1:])
 	case "help", "--help", "-h":
 		printUsage(os.Stdout)
 		return nil
@@ -108,6 +110,7 @@ Usage:
   lc visibility set ITEM_ID --source SOURCE_ID --visibility private|team|public|inherit --bundle DIR [--json]
   lc serve --bundle DIR [--once]
   lc host hook --bundle DIR [--visibility public|team|private]
+  lc inspect --bundle DIR [--json]
 
 The context bundle is specified in docs/architecture/overview.md. Reusing a
 source name refreshes that source; source files are only read.

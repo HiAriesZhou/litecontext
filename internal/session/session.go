@@ -29,7 +29,7 @@ const (
 )
 
 type Request struct {
-	Op         string         `json:"op" enum:"record,prepare,search,show,deliver,checkpoint,memory"`
+	Op         string         `json:"op" enum:"record,prepare,search,show,deliver,checkpoint,memory,inspect"`
 	Query      string         `json:"query,omitempty"`
 	Terms      []string       `json:"terms,omitempty"`
 	Limit      int            `json:"limit,omitempty"`
@@ -79,6 +79,7 @@ type DeliveryInput struct {
 	Emitted      int    `json:"emitted"`
 	Acknowledged string `json:"acknowledged,omitempty" enum:"unknown"`
 	Used         string `json:"used,omitempty" enum:"unknown"`
+	ElapsedMs    *int   `json:"elapsedMs,omitempty"`
 }
 
 type Response struct {
@@ -205,6 +206,9 @@ func dispatch(ctx context.Context, b *bundle.Bundle, request Request) (any, bool
 		}
 		record, err := ApplyMemory(ctx, b.Dir(), *request.Memory)
 		return record, false, err
+	case "inspect":
+		report, err := Inspect(ctx, b.Dir())
+		return report, false, err
 	default:
 		return nil, false, fmt.Errorf("invalid request")
 	}

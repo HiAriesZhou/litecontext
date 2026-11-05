@@ -315,6 +315,41 @@ func TestServeCheckpointFeedsTheNextPrepare(t *testing.T) {
 	}
 }
 
+func TestInspectCommandReportsTheDelivery(t *testing.T) {
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "note.md"), []byte("# Rule\n\nPortable rule.\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "bundle")
+	captureStdout(t, func() error { return run([]string{"bundle", "init", dir, "--json"}) })
+	captureStdout(t, func() error {
+		return run([]string{"collect", "markdown", source, "--bundle", dir, "--name", "notes", "--json"})
+	})
+	saved := withStdin(t, "{\"op\":\"checkpoint\",\"task\":{\"goal\":\"Ship the checkpoint\"}}\n", func() error {
+		return run([]string{"serve", "--bundle", dir, "--once"})
+	})
+	if !strings.Contains(saved, `"ok":true`) {
+		t.Fatalf("checkpoint: %s", saved)
+	}
+	delivered := withStdin(t, "{\"op\":\"deliver\",\"eventId\":\"turn-cli\",\"delivery\":{\"text\":\"Rendered checkpoint\",\"selected\":1,\"emitted\":1,\"elapsedMs\":12}}\n", func() error {
+		return run([]string{"serve", "--bundle", dir, "--once"})
+	})
+	if !strings.Contains(delivered, `"ok":true`) {
+		t.Fatalf("deliver: %s", delivered)
+	}
+	output := captureStdout(t, func() error { return run([]string{"inspect", "--bundle", dir, "--json"}) })
+	if !strings.Contains(output, "Ship the checkpoint") || !strings.Contains(output, "Rendered checkpoint") || !strings.Contains(output, `"elapsedMs": 12`) || strings.Contains(output, dir) || !strings.Contains(output, `"currentMemories": []`) {
+		t.Fatalf("inspect: %s", output)
+	}
+	if err := run([]string{"inspect", "--bundle", t.TempDir()}); err == nil {
+		t.Fatal("accepted a directory that is not a bundle")
+	}
+	plain := captureStdout(t, func() error { return run([]string{"inspect", "--bundle", dir}) })
+	if !strings.Contains(plain, "Goal: Ship the checkpoint") || !strings.Contains(plain, "Current memories:\nnone\n") || !strings.Contains(plain, "turn-cli selected=1 emitted=1 elapsed=12ms\nRendered checkpoint\n") {
+		t.Fatalf("plain: %s", plain)
+	}
+}
+
 func withStdin(t *testing.T, payload string, operation func() error) string {
 	t.Helper()
 	reader, writer, err := os.Pipe()

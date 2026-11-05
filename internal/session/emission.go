@@ -25,6 +25,7 @@ type Emission struct {
 	Emitted      int    `json:"emitted"`
 	Acknowledged string `json:"acknowledged"`
 	Used         string `json:"used"`
+	ElapsedMs    *int   `json:"elapsedMs,omitempty"`
 }
 
 // SaveEmission records the injection returned to the host for one event.
@@ -40,12 +41,15 @@ func SaveEmission(ctx context.Context, bundleDir, eventID string, input Delivery
 	if (input.Acknowledged != "" && input.Acknowledged != "unknown") || (input.Used != "" && input.Used != "unknown") {
 		return fmt.Errorf("invalid delivery")
 	}
+	if input.ElapsedMs != nil && (*input.ElapsedMs < 0 || *input.ElapsedMs > 600000) {
+		return fmt.Errorf("invalid delivery")
+	}
 	if err := plainText(input.Text, maxEmissionBytes); err != nil {
 		return fmt.Errorf("invalid delivery")
 	}
 	payload, err := canonicalEmission(Emission{
 		EventID: eventID, Text: input.Text, Selected: input.Selected, Emitted: input.Emitted,
-		Acknowledged: "unknown", Used: "unknown",
+		Acknowledged: "unknown", Used: "unknown", ElapsedMs: input.ElapsedMs,
 	})
 	if err != nil {
 		return fmt.Errorf("invalid delivery")
@@ -138,7 +142,7 @@ func ReadEmission(bundleDir, eventID string) (Emission, error) {
 	if err = strictjson.Decode(bytes.TrimSpace(data), &emission); err != nil {
 		return Emission{}, fmt.Errorf("invalid delivery")
 	}
-	if emission.EventID != eventID || emission.Text == "" || emission.Selected < 0 || emission.Emitted < 0 || emission.Emitted > emission.Selected || emission.Acknowledged != "unknown" || emission.Used != "unknown" {
+	if emission.EventID != eventID || emission.Text == "" || emission.Selected < 0 || emission.Emitted < 0 || emission.Emitted > emission.Selected || emission.Acknowledged != "unknown" || emission.Used != "unknown" || (emission.ElapsedMs != nil && (*emission.ElapsedMs < 0 || *emission.ElapsedMs > 600000)) {
 		return Emission{}, fmt.Errorf("invalid delivery")
 	}
 	return emission, nil
