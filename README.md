@@ -6,7 +6,7 @@ LiteContext keeps source files in place and uses inspectable, portable files wit
 
 ## Status
 
-Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. `lc serve` exposes those reads, plus append-only session events, a replaceable task checkpoint, explicit memory changes, a bounded context pack, and a read-only inspect report, over newline-delimited JSON at session contract version 1. `lc host hook` maps one Codex or Claude Code hook event onto that contract and does not install host configuration. `lc inspect` prints the snapshot generation, source list, stored task, memories, events, and deliveries without starting a service. `lc view` writes those stored records, plus source id, name, type, active state, and update time, to one self-contained HTML file and exits. It does not change memory. Connected hosts, selected files, collection failure, replay, and processing stage are labeled unknown. A stored delivery may list each omission role, locator, and reason; a record written without omissions still reads as unknown. A stored delivery may list each emitted entry's role, locator, and source identity; a record written without entries still reads as unknown. A memory is included only after it is confirmed. A delivery record may include elapsed milliseconds; a record written without that field still reads. CI runs the Go suite on Windows. A Windows agent hook has not been observed.
+Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. `lc serve` exposes those reads, plus append-only session events, a replaceable task checkpoint, explicit memory changes, a bounded context pack, and a read-only inspect report, over newline-delimited JSON at session contract version 1. `lc host hook` maps one Codex or Claude Code hook event, and Gemini CLI `BeforeAgent`, onto that contract and does not install host configuration. `lc inspect` prints the snapshot generation, source list, stored task, memories, events, and deliveries without starting a service. `lc view` writes those stored records, plus source id, name, type, active state, and update time, to one self-contained HTML file and exits. It does not change memory. Connected hosts, selected files, collection failure, replay, and processing stage are labeled unknown. A stored delivery may list each omission role, locator, and reason; a record written without omissions still reads as unknown. A stored delivery may list each emitted entry's role, locator, and source identity; a record written without entries still reads as unknown. A memory is included only after it is confirmed. A delivery record may include elapsed milliseconds; a record written without that field still reads. CI runs the Go suite on Windows. A Windows agent hook has not been observed.
 
 ## Quick start
 
@@ -30,7 +30,7 @@ JSON
 ./bin/lc view --bundle /path/to/new-bundle --output /path/to/report.html
 ```
 
-`lc host hook` gives a prompt 200ms and any other event one second. When the bundle or the deadline fails, it writes nothing to stdout and exits 0.
+`lc host hook` gives `UserPromptSubmit` and `BeforeAgent` 200ms and any other event one second. When the bundle or the deadline fails, it writes nothing to stdout and exits 0.
 
 The bundle destination must be absent or empty. Reuse the same source name to refresh its snapshot. Source files are read only. Keep bundles outside source repositories when possible: they contain collected content and should not be committed.
 
@@ -43,7 +43,7 @@ The bundle destination must be absent or empty. Reuse the same source name to re
 - `internal/ingest/` — read-only Markdown scanning.
 - `internal/session/` — session contract, task checkpoints, memory, and inspect.
 - `internal/view/` — read-only HTML report.
-- `internal/host/` — one-shot Codex and Claude Code hook adapter.
+- `internal/host/` — one-shot hook adapter for Codex, Claude Code, and Gemini CLI `BeforeAgent`.
 - `contracts/context-model/v1/` — portable record schemas.
 - `contracts/bundle/v1/` — bundle manifest and snapshot schemas.
 - `docs/architecture/overview.md` — implemented storage and collection.

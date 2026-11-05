@@ -51,3 +51,14 @@ func TestPromptHookForTwoHundredNotesStaysResponsive(t *testing.T) {
 	}
 	t.Logf("hook %s host budget %s", elapsed, Deadline("UserPromptSubmit"))
 }
+
+func TestBeforeAgentUsesThePromptDeadline(t *testing.T) {
+	if Deadline("BeforeAgent") != 200*time.Millisecond || Deadline("UserPromptSubmit") != 200*time.Millisecond {
+		t.Fatalf("prompt deadlines BeforeAgent=%s UserPromptSubmit=%s", Deadline("BeforeAgent"), Deadline("UserPromptSubmit"))
+	}
+	for _, name := range []string{"SessionStart", "SessionEnd", "Stop", "PreCompact", "AfterAgent", "PreCompress"} {
+		if Deadline(name) != time.Second {
+			t.Fatalf("%s deadline %s", name, Deadline(name))
+		}
+	}
+}
