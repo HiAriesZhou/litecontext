@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litecontext.dev/contracts/session/v1/prepare-pack.schema.json",
+  "title": "LiteContext prepare pack",
+  "description": "The result of a version 1 prepare operation. Entries are the context selected for one task. Omissions record what was left out. Delivery counts selected and emitted entries.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entries", "omissions", "delivery"],
+  "properties": {
+    "entries": { "type": "array", "items": { "$ref": "#/$defs/entry" } },
+    "omissions": { "type": "array", "items": { "$ref": "#/$defs/omission" } },
+    "delivery": { "$ref": "#/$defs/delivery" }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "text"],
+      "properties": {
+        "role": { "type": "string" },
+        "text": { "type": "string" },
+        "ref": { "$ref": "#/$defs/ref" },
+        "locator": { "type": "string" }
+      }
+    },
+    "omission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason"],
+      "properties": {
+        "role": { "type": "string" },
+        "ref": { "$ref": "#/$defs/ref" },
+        "reason": { "type": "string" }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selected", "emitted", "acknowledged", "used"],
+      "properties": {
+        "selected": { "type": "integer" },
+        "emitted": { "type": "integer" },
+        "acknowledged": { "type": "string" },
+        "used": { "type": "string" }
+      }
+    },
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "itemId"],
+      "properties": {
+        "sourceId": { "type": "string" },
+        "itemId": { "type": "string" },
+        "recordHash": { "type": "string" },
+        "startLine": { "type": "integer" },
+        "endLine": { "type": "integer" }
+      }
+    }
+  }
+}
