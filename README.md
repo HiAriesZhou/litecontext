@@ -6,7 +6,7 @@ LiteContext keeps source files in place and uses inspectable, portable files wit
 
 ## Status
 
-Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. `lc serve` exposes those reads, plus append-only session events and a bounded context pack, over newline-delimited JSON. Memory activation, host adapters, and Windows storage are not implemented yet.
+Early development. The current CLI initializes and validates a version 1 context bundle and collects Markdown folders (including Obsidian vaults), bounded Git commit facts, and explicitly scoped producer batches. It supports scoped literal search, exact-version citations, visibility overrides, source disconnection and removal. `lc serve` exposes those reads, plus append-only session events and a bounded context pack, over newline-delimited JSON. Memory activation and host adapters are not implemented yet. Windows file locking compiles into the native binary, but it has not been run on Windows.
 
 ## Quick start
 
