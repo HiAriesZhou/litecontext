@@ -1,6 +1,6 @@
 # Information layer
 
-LiteContext is one local product and one repository. Knowledge, Memory, and Context are capability domains over a shared evidence foundation. They are not separate products. This page is the current target. The file-based evidence core described in [Architecture](overview.md), the session stdio contract, task checkpoints, explicit memory changes, `lc host hook`, and the read-only `lc inspect` report are implemented. The hook command does not install or edit host configuration. `lc inspect` reads stored records and does not start a service; it is not the four-page viewer. CI runs the Go suite on Windows. That covers the native lock, bundle commit, and stdio contract. A Windows agent hook has not been observed. The evidence core also runs on macOS and Linux.
+LiteContext is one local product and one repository. Knowledge, Memory, and Context are capability domains over a shared evidence foundation. They are not separate products. This page is the current target. The file-based evidence core described in [Architecture](overview.md), the session stdio contract, task checkpoints, explicit memory changes, `lc host hook`, and the read-only `lc inspect` report are implemented. The hook command does not install or edit host configuration. `lc inspect` reads stored records and does not start a service; it is not the viewer. `lc view` writes one self-contained HTML file from the stored records and source list, then exits. It does not change memory. CI runs the Go suite on Windows. That covers the native lock, bundle commit, and stdio contract. A Windows agent hook has not been observed. The evidence core also runs on macOS and Linux.
 
 ## Capabilities
 
@@ -79,12 +79,12 @@ The prototype checks one software project handed between Codex and Claude Code. 
 
 `TestPrototypeHandoffKeepsCurrentConstraints` runs that sample: a changed document, a superseded decision, a changed working file, a duplicate event, and a rejected memory update. It prepares knowledge without memory, memory without a knowledge hit, and context composed from the refreshed document, the confirmed memory, and the task. The text injected by the hook is the stored delivery.
 
-`lc inspect` is not this viewer. The viewer has four pages:
+`lc inspect` prints the stored report. `lc view --bundle DIR --output FILE` writes one self-contained HTML file and exits. The file is not a service, has no write controls, and does not change memory. It has four sections:
 
-1. Connected hosts, selected files, the latest collection, and the failure reason.
-2. Context actually delivered, the source version of each entry, and omissions caused by capacity, permission, or expiry.
-3. A memory candidate with its scope, evidence, and actions to confirm, correct, or revoke it.
-4. Whether an event was received, whether it was a duplicate, whether processing finished, and which stage failed.
+1. Sources, shown by id, name, type, active state, and update time, with the stored task and stored read failures. Connected hosts, selected files, and collection failure are unknown.
+2. Stored delivery text, selected and emitted counts, and elapsed time when it was stored. Acknowledgement, use, the source version of each entry, and the omission reason are unknown.
+3. Each memory with its scope, visibility, and evidence. The next explicit session action is confirm for a candidate; correct, supersede, or revoke for an active memory; and none after it is superseded or revoked.
+4. Stored events. A name beginning with a dot, including the Windows event lock, is not an event. Replay and processing stage are unknown.
 
 The prototype is accepted only when the record matches what the host received, required constraints are present, superseded decisions are not presented as current, and the added time stays visible. The macOS path is accepted before the Windows adapter. Windows acceptance includes a native lock, an atomic bundle commit, and the same stdio contract. Knowledge must work without Memory. Memory must accept a cited conclusion without a complete knowledge base. Context must allow either supplier to be replaced.
 
