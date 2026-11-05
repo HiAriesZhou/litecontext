@@ -40,6 +40,7 @@ func Deadline(eventName string) time.Duration {
 
 // EventName returns the host event name, or empty when the payload is not a JSON object.
 func EventName(input []byte) string {
+	input = normalizeHookInput(input)
 	if len(input) == 0 || len(input) > MaxInput {
 		return ""
 	}
@@ -112,6 +113,7 @@ func runHook(ctx context.Context, dir, visibility string, selected profile, inpu
 	if ctx.Err() != nil {
 		return nil, "hook skipped: deadline", ""
 	}
+	input = normalizeHookInput(input)
 	if len(input) == 0 || len(input) > MaxInput {
 		return nil, "hook skipped: invalid input", ""
 	}
@@ -250,6 +252,13 @@ func sourceToken(source string) string {
 func eventID(kind, sessionID, body string) string {
 	sum := sha256.Sum256([]byte(kind + "\x00" + sessionID + "\x00" + body))
 	return "hook_" + hex.EncodeToString(sum[:])
+}
+
+func normalizeHookInput(input []byte) []byte {
+	if bytes.HasPrefix(input, []byte{0xEF, 0xBB, 0xBF}) {
+		return input[3:]
+	}
+	return input
 }
 
 type injection struct {
