@@ -513,14 +513,13 @@ func TestCollectExplainsWhyTheSourceFolderIsUnusable(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing")
 	file := filepath.Join(t.TempDir(), "note.md")
 	writeFile(t, file, "# Note\n")
-	for path, want := range map[string]string{
-		missing: "no such file or directory",
-		file:    "is not a directory",
-	} {
-		_, err := b.CollectMarkdown(context.Background(), path, "notes", testNow)
-		if err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), path) {
-			t.Errorf("%s: error = %v, want it to name the path and contain %q", path, err, want)
-		}
+	_, missingErr := b.CollectMarkdown(context.Background(), missing, "notes", testNow)
+	if missingErr == nil || !errors.Is(missingErr, os.ErrNotExist) || !strings.Contains(missingErr.Error(), missing) {
+		t.Errorf("%s: error = %v, want the path and a not-exist error", missing, missingErr)
+	}
+	_, fileErr := b.CollectMarkdown(context.Background(), file, "notes", testNow)
+	if fileErr == nil || !strings.Contains(fileErr.Error(), "is not a directory") || !strings.Contains(fileErr.Error(), file) {
+		t.Errorf("%s: error = %v, want the path and a directory error", file, fileErr)
 	}
 }
 
