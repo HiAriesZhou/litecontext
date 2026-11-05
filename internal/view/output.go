@@ -1,104 +1,58 @@
 package view
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
 
 // Write renders page to output. The output must be a regular file outside the bundle.
-// An existing symlink or non-regular path is refused. The bundle is not modified.
+// The HTML is written to a new file in the destination directory and renamed into place.
+// An existing symlink or non-regular path is refused. A hard link is replaced by name,
+// so the previously linked inode is not modified. The bundle is not modified.
 func Write(bundleDir, output string, page Page) error {
-	if err := checkOutput(bundleDir, output); err != nil {
-		return err
-	}
 	body, err := Render(page)
 	if err != nil {
 		return err
 	}
-	file, err := os.OpenFile(output, os.O_WRONLY|os.O_CREATE, 0o600)
-	if err != nil {
-		return err
-	}
-	writeErr := writeRegular(file, output, body)
-	closeErr := file.Close()
-	if writeErr != nil {
-		return writeErr
-	}
-	return closeErr
+	return install(bundleDir, output, body)
 }
 
-func writeRegular(file *os.File, output string, body []byte) error {
-	opened, err := file.Stat()
-	if err != nil {
-		return err
-	}
-	linked, err := os.Lstat(output)
-	if err != nil {
-		return err
-	}
-	if linked.Mode()&os.ModeSymlink != 0 || !opened.Mode().IsRegular() || !os.SameFile(opened, linked) {
-		return fmt.Errorf("output must be a regular file")
-	}
-	if err := file.Chmod(0o600); err != nil {
-		return err
-	}
-	if err := file.Truncate(0); err != nil {
-		return err
-	}
-	_, err = file.Write(body)
-	return err
-}
+var (
+	errRegular = fmt.Errorf("output must be a regular file")
+	errOutside = fmt.Errorf("output must be outside the bundle")
+)
 
-func checkOutput(bundleDir, output string) error {
+func outputName(bundleDir, output string) (string, string, string, error) {
 	if strings.TrimSpace(output) == "" {
-		return fmt.Errorf("output must be a regular file")
+		return "", "", "", errRegular
 	}
-	bundlePath, err := canonical(bundleDir)
+	bundlePath, err := filepath.Abs(bundleDir)
 	if err != nil {
-		return err
+		return "", "", "", err
 	}
 	outputPath, err := filepath.Abs(output)
 	if err != nil {
-		return err
+		return "", "", "", err
 	}
-	info, err := os.Lstat(outputPath)
-	if err == nil {
-		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-			return fmt.Errorf("output must be a regular file")
-		}
-	} else if !os.IsNotExist(err) {
-		return err
+	name := filepath.Base(outputPath)
+	if name == "." || name == ".." || name == string(filepath.Separator) || strings.ContainsAny(name, `/\`) {
+		return "", "", "", errRegular
 	}
-	resolvedOutput, err := canonical(outputPath)
-	if err != nil {
-		return fmt.Errorf("output must be a regular file")
+	if pathInside(filepath.Clean(bundlePath), filepath.Clean(outputPath)) {
+		return "", "", "", errOutside
 	}
-	if pathInside(bundlePath, resolvedOutput) {
-		return fmt.Errorf("output must be outside the bundle")
-	}
-	return nil
+	return bundlePath, filepath.Dir(outputPath), name, nil
 }
 
-func canonical(path string) (string, error) {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
+func tempName() (string, error) {
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
 		return "", err
 	}
-	resolved, err := filepath.EvalSymlinks(absolute)
-	if err == nil {
-		return filepath.Clean(resolved), nil
-	}
-	if !os.IsNotExist(err) {
-		return "", err
-	}
-	parent := filepath.Dir(absolute)
-	resolvedParent, err := filepath.EvalSymlinks(parent)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(resolvedParent, filepath.Base(absolute)), nil
+	return ".lc-view-" + hex.EncodeToString(raw[:]), nil
 }
 
 func pathInside(root, target string) bool {
