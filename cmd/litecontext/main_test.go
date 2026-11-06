@@ -646,10 +646,21 @@ func TestHostExamplePrintsCodexHooksWithoutWriting(t *testing.T) {
 		t.Fatalf("unexpected example:\n%s", stdout)
 	}
 	relative := captureStdout(t, func() error {
-		return run([]string{"host", "example", "--bundle", filepath.Join("relative bundle")})
+		return run([]string{"host", "example", "--bundle", "relative bundle"})
 	})
-	absRelative, err := filepath.Abs(filepath.Join("relative bundle"))
-	if err != nil || !strings.Contains(relative, absRelative) {
-		t.Fatalf("relative path was not made absolute:\n%s", relative)
+	var decoded struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal([]byte(relative), &decoded); err != nil {
+		t.Fatalf("relative json: %v\n%s", err, relative)
+	}
+	absRelative, err := filepath.Abs("relative bundle")
+	command := decoded.Hooks["SessionEnd"][0].Hooks[0].Command
+	if err != nil || !strings.Contains(command, absRelative) {
+		t.Fatalf("relative path was not made absolute: %s", command)
 	}
 }
