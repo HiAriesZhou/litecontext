@@ -233,10 +233,61 @@ func TestGeminiExampleQuotesCommandAndUsesMilliseconds(t *testing.T) {
 	if strings.Contains(string(windowsRaw), "commandWindows") || strings.Contains(string(windowsRaw), `"args"`) {
 		t.Fatalf("unexpected windows example:\n%s", windowsRaw)
 	}
-	wantWindows := `"C:\Program Files\lc.exe" host hook --host gemini --bundle "D:\My Bundle"`
+	wantWindows := `& 'C:\Program Files\lc.exe' host hook --host gemini --bundle 'D:\My Bundle'`
 	assertGeminiExample(t, decodeGeminiExample(t, windowsRaw), wantWindows)
-	if _, err := HostExample("gemini", `C:\a%b\lc.exe`, `D:\bundle`, "windows"); !errors.Is(err, errExamplePath) {
-		t.Fatalf("percent path error = %v", err)
+}
+
+func TestGeminiWindowsExampleKeepsLiteralPaths(t *testing.T) {
+	cases := []struct {
+		name, executable, bundle, want string
+	}{
+		{
+			name:       "shell metacharacters",
+			executable: "C:\\a%b!\\lc`.exe",
+			bundle:     `D:\o'brien\$(Write-Output unexpected)\`,
+			want:       "& 'C:\\a%b!\\lc`.exe' host hook --host gemini --bundle 'D:\\o''brien\\$(Write-Output unexpected)\\'",
+		},
+		{
+			name:       "typographic apostrophes",
+			executable: `C:\tools\lc.exe`,
+			bundle:     `D:\‘left’‚base‛`,
+			want:       `& 'C:\tools\lc.exe' host hook --host gemini --bundle 'D:\'‘left'’'‚base'‛'`,
+		},
+		{
+			name:       "UNC",
+			executable: `\\server\share\lc.exe`,
+			bundle:     `\\server\share\My Bundle\`,
+			want:       `& '\\server\share\lc.exe' host hook --host gemini --bundle '\\server\share\My Bundle\'`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := HostExample("gemini", tc.executable, tc.bundle, "windows")
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertGeminiExample(t, decodeGeminiExample(t, raw), tc.want)
+		})
+	}
+}
+
+func TestGeminiExampleRejectsRewrittenOrInvalidPaths(t *testing.T) {
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		prefix := "/tmp/"
+		if goos == "windows" {
+			prefix = `C:\`
+		}
+		for _, suffix := range []string{
+			"\x00", "\r", "\n", "$GEMINI_PROJECT_DIR", "$GEMINI_CWD",
+			"$GEMINI_PLANS_DIR", "$GEMINI_SESSION_ID", "$CLAUDE_PROJECT_DIR",
+		} {
+			bad := prefix + suffix
+			for _, paths := range [][2]string{{bad, prefix + "bundle"}, {prefix + "lc", bad}} {
+				if _, err := HostExample("gemini", paths[0], paths[1], goos); !errors.Is(err, errExamplePath) {
+					t.Errorf("%s %q: error = %v", goos, paths, err)
+				}
+			}
+		}
 	}
 }
 

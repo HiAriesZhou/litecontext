@@ -176,15 +176,54 @@ func codexHookCommand(goos, executable, bundle string) (string, error) {
 }
 
 func geminiHookCommand(goos, executable, bundle string) (string, error) {
-	quotedExecutable, err := quoteHookArg(goos, executable)
+	// Gemini replaces these tokens before invoking the shell, even inside a
+	// quoted path. Refuse them rather than let that rewrite change the command.
+	for _, token := range []string{"$GEMINI_PROJECT_DIR", "$GEMINI_CWD", "$GEMINI_PLANS_DIR", "$GEMINI_SESSION_ID", "$CLAUDE_PROJECT_DIR"} {
+		if strings.Contains(executable, token) || strings.Contains(bundle, token) {
+			return "", errExamplePath
+		}
+	}
+	quote := quoteHookArg
+	prefix := ""
+	if goos == "windows" {
+		// Gemini CLI runs this string through PowerShell -Command and appends
+		// an exit-code check after it. Quote only the paths, and invoke the
+		// executable with the call operator.
+		quote = quotePowerShellArg
+		prefix = "& "
+	}
+	quotedExecutable, err := quote(goos, executable)
 	if err != nil {
 		return "", err
 	}
-	quotedBundle, err := quoteHookArg(goos, bundle)
+	quotedBundle, err := quote(goos, bundle)
 	if err != nil {
 		return "", err
 	}
-	return quotedExecutable + " host hook --host gemini --bundle " + quotedBundle, nil
+	return prefix + quotedExecutable + " host hook --host gemini --bundle " + quotedBundle, nil
+}
+
+func quotePowerShellArg(goos, value string) (string, error) {
+	if goos != "windows" {
+		return "", errExampleOS
+	}
+	// PowerShell single quotes are literal, including %, !, $(), backticks,
+	// and a trailing backslash. An apostrophe is escaped by doubling it.
+	if err := plainHookPath(goos, value); err != nil {
+		return "", err
+	}
+	// PowerShell also treats typographic single quotes as delimiters.
+	var quoted strings.Builder
+	quoted.WriteByte('\'')
+	for _, ch := range value {
+		switch ch {
+		case '\'', '\u2018', '\u2019', '\u201a', '\u201b':
+			quoted.WriteByte('\'')
+		}
+		quoted.WriteRune(ch)
+	}
+	quoted.WriteByte('\'')
+	return quoted.String(), nil
 }
 
 func plainHookPath(goos, value string) error {
@@ -202,6 +241,7 @@ func quoteHookArg(goos, value string) (string, error) {
 	case "windows":
 		// cmd.exe still expands % and ! inside quotes, and a trailing
 		// backslash escapes the closing quote. Reject those paths.
+		// Gemini Windows uses quotePowerShellArg instead of this form.
 		if strings.ContainsAny(value, "%!\"") || strings.HasSuffix(value, `\`) {
 			return "", errExamplePath
 		}
