@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -207,10 +208,16 @@ func quotePowerShellArg(goos, value string) (string, error) {
 	if goos != "windows" {
 		return "", errExampleOS
 	}
-	// PowerShell single quotes are literal, including %, !, $(), backticks,
-	// and a trailing backslash. An apostrophe is escaped by doubling it.
+	// PowerShell single quotes keep shell metacharacters literal.
 	if err := plainHookPath(goos, value); err != nil {
 		return "", err
+	}
+	// Windows PowerShell 5.1 corrupts a trailing backslash when it adds native
+	// argument quotes around whitespace. The CLI cleans directory paths with
+	// filepath.Abs before reaching this boundary; refuse unclean direct input.
+	// A drive root has no whitespace and remains usable.
+	if strings.HasSuffix(value, `\`) && strings.ContainsFunc(value, unicode.IsSpace) {
+		return "", errExamplePath
 	}
 	// PowerShell also treats typographic single quotes as delimiters.
 	var quoted strings.Builder

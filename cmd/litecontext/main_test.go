@@ -666,7 +666,8 @@ func TestHostExamplePrintsCodexHooksWithoutWriting(t *testing.T) {
 }
 
 func TestHostExamplePrintsClaudeAndGeminiWithoutWriting(t *testing.T) {
-	bundle := filepath.Join(t.TempDir(), "my bundle")
+	// User input may end in a separator; the CLI must clean it before quoting.
+	bundle := filepath.Join(t.TempDir(), "my bundle") + string(os.PathSeparator)
 	if err := run([]string{"host", "example", "--bundle", bundle, "--host", ""}); err == nil || !strings.Contains(err.Error(), "usage:") {
 		t.Fatalf("empty host: %v", err)
 	}
