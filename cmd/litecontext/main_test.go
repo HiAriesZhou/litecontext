@@ -664,3 +664,93 @@ func TestHostExamplePrintsCodexHooksWithoutWriting(t *testing.T) {
 		t.Fatalf("relative path was not made absolute: %s", command)
 	}
 }
+
+func TestHostExamplePrintsClaudeAndGeminiWithoutWriting(t *testing.T) {
+	bundle := filepath.Join(t.TempDir(), "my bundle")
+	if err := run([]string{"host", "example", "--bundle", bundle, "--host", ""}); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("empty host: %v", err)
+	}
+	if err := run([]string{"host", "example", "--bundle", bundle, "--host", "other"}); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("unknown host: %v", err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, err = filepath.Abs(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	absBundle, err := filepath.Abs(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr := captureOutputs(t, "", func() error {
+		return run([]string{"host", "example", "--host", "claude", "--bundle", bundle})
+	})
+	if stderr != "" {
+		t.Fatalf("claude stderr %q", stderr)
+	}
+	if _, err := os.Stat(bundle); !os.IsNotExist(err) {
+		t.Fatalf("created bundle path: %v", err)
+	}
+	var claude struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Type    string   `json:"type"`
+				Command string   `json:"command"`
+				Args    []string `json:"args"`
+				Timeout int      `json:"timeout"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &claude); err != nil {
+		t.Fatalf("claude json: %v\n%s", err, stdout)
+	}
+	for _, name := range []string{"SessionStart", "UserPromptSubmit", "PreCompact", "Stop", "SessionEnd"} {
+		groups := claude.Hooks[name]
+		if len(groups) != 1 || len(groups[0].Hooks) != 1 {
+			t.Fatalf("%s %#v", name, groups)
+		}
+		hook := groups[0].Hooks[0]
+		if hook.Type != "command" || hook.Command != executable || hook.Timeout != 10 {
+			t.Fatalf("%s hook %#v", name, hook)
+		}
+		if len(hook.Args) != 6 || hook.Args[0] != "host" || hook.Args[1] != "hook" || hook.Args[2] != "--host" || hook.Args[3] != "claude" || hook.Args[4] != "--bundle" || hook.Args[5] != absBundle {
+			t.Fatalf("%s args %#v", name, hook.Args)
+		}
+	}
+	if strings.Contains(stdout, "commandWindows") || strings.Contains(stdout, "matcher") || strings.Contains(stdout, `"shell"`) {
+		t.Fatalf("unexpected claude example:\n%s", stdout)
+	}
+
+	stdout, stderr = captureOutputs(t, "", func() error {
+		return run([]string{"host", "example", "--host", "gemini", "--bundle", bundle})
+	})
+	if stderr != "" {
+		t.Fatalf("gemini stderr %q", stderr)
+	}
+	var gemini struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Type    string `json:"type"`
+				Command string `json:"command"`
+				Timeout int    `json:"timeout"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &gemini); err != nil {
+		t.Fatalf("gemini json: %v\n%s", err, stdout)
+	}
+	if len(gemini.Hooks) != 1 || len(gemini.Hooks["BeforeAgent"]) != 1 || len(gemini.Hooks["BeforeAgent"][0].Hooks) != 1 {
+		t.Fatalf("gemini hooks %#v", gemini.Hooks)
+	}
+	hook := gemini.Hooks["BeforeAgent"][0].Hooks[0]
+	if !strings.Contains(hook.Command, executable) || !strings.Contains(hook.Command, absBundle) || hook.Timeout != 10000 {
+		t.Fatalf("gemini hook %#v", hook)
+	}
+	if strings.Contains(stdout, "commandWindows") || strings.Contains(stdout, "matcher") || strings.Contains(stdout, `"args"`) || strings.Contains(stdout, "SessionStart") {
+		t.Fatalf("unexpected gemini example:\n%s", stdout)
+	}
+}

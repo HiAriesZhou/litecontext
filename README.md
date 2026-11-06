@@ -30,13 +30,15 @@ JSON
 {"hook_event_name":"BeforeAgent","session_id":"example","prompt":"project rule"}
 JSON
 ./bin/lc host example --bundle /path/to/new-bundle
+./bin/lc host example --host claude --bundle /path/to/new-bundle
+./bin/lc host example --host gemini --bundle /path/to/new-bundle
 ./bin/lc inspect --bundle /path/to/new-bundle
 ./bin/lc view --bundle /path/to/new-bundle --output /path/to/report.html
 ```
 
 `lc host hook` gives `UserPromptSubmit` and `BeforeAgent` 200ms and any other event one second. When the bundle or the deadline fails, it writes nothing to stdout and exits 0. Codex and Claude Code also write one stderr line. Gemini events do not.
 
-`lc host example --bundle DIR` prints a Codex hooks.json document for this executable and does not write it. Run the built binary on the machine that will load the hook. macOS and Linux omit `commandWindows`; run the command on Windows to produce that field. `SessionEnd` uses a 3 second Codex timeout, and the other events use 10 seconds.
+`lc host example --bundle DIR` prints a hook fragment for this executable and does not write it. The default is Codex. `--host claude` prints a settings fragment that uses `args`, so the executable and bundle are not passed through a shell. `--host gemini` prints a settings fragment for `BeforeAgent` only, and its timeout is in milliseconds. Run the built binary on the machine that will load the hook. The Codex fragment omits `commandWindows` on macOS and Linux; run that command on Windows to produce the field. Codex `SessionEnd` uses 3 seconds and its other events use 10. Every Claude event uses 10 seconds. Gemini uses 10000 milliseconds.
 
 The bundle destination must be absent or empty. Reuse the same source name to refresh its snapshot. Source files are read only. Keep bundles outside source repositories when possible: they contain collected content and should not be committed.
 
@@ -49,7 +51,7 @@ The bundle destination must be absent or empty. Reuse the same source name to re
 - `internal/ingest/` — read-only Markdown scanning.
 - `internal/session/` — session contract, task checkpoints, memory, and inspect.
 - `internal/view/` — read-only HTML report.
-- `internal/host/` — one-shot hook profiles for Codex, Claude Code, and Gemini CLI `BeforeAgent`, and a printed Codex hooks.json example.
+- `internal/host/` — one-shot hook profiles for Codex, Claude Code, and Gemini CLI `BeforeAgent`, plus printed Codex, Claude, and Gemini hook fragments.
 - `contracts/context-model/v1/` — portable record schemas.
 - `contracts/bundle/v1/` — bundle manifest and snapshot schemas.
 - `docs/architecture/overview.md` — implemented storage and collection.

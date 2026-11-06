@@ -14,8 +14,8 @@ import (
 
 const (
 	hostHookUsage    = "usage: lc host hook --bundle DIR [--host codex|claude|gemini] [--visibility public|team|private]"
-	hostExampleUsage = "usage: lc host example --bundle DIR"
-	hostUsage        = hostHookUsage + "\n       lc host example --bundle DIR"
+	hostExampleUsage = "usage: lc host example --bundle DIR [--host codex|claude|gemini]"
+	hostUsage        = hostHookUsage + "\n       lc host example --bundle DIR [--host codex|claude|gemini]"
 )
 
 // hookDeadline is the budget for one command invocation.
@@ -85,10 +85,11 @@ func runHostExample(arguments []string) error {
 	flags := flag.NewFlagSet("host example", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	dir := flags.String("bundle", "", "bundle directory")
+	hostName := flags.String("host", "codex", "codex, claude, or gemini")
 	if err := flags.Parse(commandFlagsFirst(arguments)); err != nil {
 		return err
 	}
-	if *dir == "" || flags.NArg() != 0 {
+	if *dir == "" || flags.NArg() != 0 || !exampleHost(*hostName) {
 		return fmt.Errorf("%s", hostExampleUsage)
 	}
 	bundlePath, err := filepath.Abs(*dir)
@@ -103,10 +104,19 @@ func runHostExample(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	encoded, err := host.CodexExample(executable, bundlePath, runtime.GOOS)
+	encoded, err := host.HostExample(*hostName, executable, bundlePath, runtime.GOOS)
 	if err != nil {
 		return err
 	}
 	_, err = os.Stdout.Write(encoded)
 	return err
+}
+
+func exampleHost(name string) bool {
+	switch name {
+	case "codex", "claude", "gemini":
+		return true
+	default:
+		return false
+	}
 }

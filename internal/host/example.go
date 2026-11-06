@@ -10,11 +10,14 @@ import (
 const (
 	codexExampleTimeoutSec    = 10
 	codexSessionEndTimeoutSec = 3
+	claudeExampleTimeoutSec   = 10
+	geminiExampleTimeoutMs    = 10_000
 )
 
 var (
 	errExamplePath = errors.New("host example: path must be absolute and quotable")
 	errExampleOS   = errors.New("host example: unsupported operating system")
+	errExampleHost = errors.New("host example: unknown host")
 )
 
 type codexHooksDocument struct {
@@ -32,15 +35,64 @@ type codexHookHandler struct {
 	Timeout        int    `json:"timeout"`
 }
 
-// CodexExample returns a Codex hooks.json document for one local executable and bundle.
-// It does not read or write either path. windows copies the command into commandWindows;
-// darwin and linux omit that field instead of inventing a Windows path.
-func CodexExample(executable, bundle, goos string) ([]byte, error) {
+type claudeHooksDocument struct {
+	Hooks map[string][]claudeHookGroup `json:"hooks"`
+}
+
+type claudeHookGroup struct {
+	Hooks []claudeHookHandler `json:"hooks"`
+}
+
+type claudeHookHandler struct {
+	Type    string   `json:"type"`
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+	Timeout int      `json:"timeout"`
+}
+
+type geminiHooksDocument struct {
+	Hooks map[string][]geminiHookGroup `json:"hooks"`
+}
+
+type geminiHookGroup struct {
+	Hooks []geminiHookHandler `json:"hooks"`
+}
+
+type geminiHookHandler struct {
+	Type    string `json:"type"`
+	Command string `json:"command"`
+	Timeout int    `json:"timeout"`
+}
+
+// HostExample returns a hook configuration fragment for one local executable and bundle.
+// It does not read or write either path. An empty or unknown host is rejected.
+// The unnamed hook profile is not an example target.
+func HostExample(hostName, executable, bundle, goos string) ([]byte, error) {
 	switch goos {
 	case "darwin", "linux", "windows":
 	default:
 		return nil, errExampleOS
 	}
+	switch hostName {
+	case "codex":
+		return codexExample(executable, bundle, goos)
+	case "claude":
+		return claudeExample(executable, bundle, goos)
+	case "gemini":
+		return geminiExample(executable, bundle, goos)
+	default:
+		return nil, errExampleHost
+	}
+}
+
+// CodexExample returns a Codex hooks.json document for one local executable and bundle.
+// It does not read or write either path. windows copies the command into commandWindows;
+// darwin and linux omit that field instead of inventing a Windows path.
+func CodexExample(executable, bundle, goos string) ([]byte, error) {
+	return HostExample("codex", executable, bundle, goos)
+}
+
+func codexExample(executable, bundle, goos string) ([]byte, error) {
 	command, err := codexHookCommand(goos, executable, bundle)
 	if err != nil {
 		return nil, err
@@ -54,11 +106,48 @@ func CodexExample(executable, bundle, goos string) ([]byte, error) {
 		handler.Timeout = codexHookTimeoutSeconds(event)
 		groups[event.name] = []codexHookGroup{{Hooks: []codexHookHandler{handler}}}
 	}
+	return encodeExample(codexHooksDocument{Hooks: groups})
+}
+
+func claudeExample(executable, bundle, goos string) ([]byte, error) {
+	if err := plainHookPath(goos, executable); err != nil {
+		return nil, err
+	}
+	if err := plainHookPath(goos, bundle); err != nil {
+		return nil, err
+	}
+	handler := claudeHookHandler{
+		Type:    "command",
+		Command: executable,
+		Args:    []string{"host", "hook", "--host", "claude", "--bundle", bundle},
+		Timeout: claudeExampleTimeoutSec,
+	}
+	groups := make(map[string][]claudeHookGroup, len(codingAgentEventList()))
+	for _, event := range codingAgentEventList() {
+		groups[event.name] = []claudeHookGroup{{Hooks: []claudeHookHandler{handler}}}
+	}
+	return encodeExample(claudeHooksDocument{Hooks: groups})
+}
+
+func geminiExample(executable, bundle, goos string) ([]byte, error) {
+	command, err := geminiHookCommand(goos, executable, bundle)
+	if err != nil {
+		return nil, err
+	}
+	handler := geminiHookHandler{Type: "command", Command: command, Timeout: geminiExampleTimeoutMs}
+	groups := make(map[string][]geminiHookGroup, len(geminiEventList()))
+	for _, event := range geminiEventList() {
+		groups[event.name] = []geminiHookGroup{{Hooks: []geminiHookHandler{handler}}}
+	}
+	return encodeExample(geminiHooksDocument{Hooks: groups})
+}
+
+func encodeExample(document any) ([]byte, error) {
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
 	encoder.SetEscapeHTML(false)
 	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(codexHooksDocument{Hooks: groups}); err != nil {
+	if err := encoder.Encode(document); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -86,9 +175,28 @@ func codexHookCommand(goos, executable, bundle string) (string, error) {
 	return quotedExecutable + " host hook --host codex --bundle " + quotedBundle, nil
 }
 
-func quoteHookArg(goos, value string) (string, error) {
+func geminiHookCommand(goos, executable, bundle string) (string, error) {
+	quotedExecutable, err := quoteHookArg(goos, executable)
+	if err != nil {
+		return "", err
+	}
+	quotedBundle, err := quoteHookArg(goos, bundle)
+	if err != nil {
+		return "", err
+	}
+	return quotedExecutable + " host hook --host gemini --bundle " + quotedBundle, nil
+}
+
+func plainHookPath(goos, value string) error {
 	if !absoluteHookPath(goos, value) || strings.ContainsAny(value, "\x00\r\n") {
-		return "", errExamplePath
+		return errExamplePath
+	}
+	return nil
+}
+
+func quoteHookArg(goos, value string) (string, error) {
+	if err := plainHookPath(goos, value); err != nil {
+		return "", err
 	}
 	switch goos {
 	case "windows":
