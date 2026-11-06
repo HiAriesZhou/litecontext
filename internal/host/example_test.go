@@ -244,8 +244,8 @@ func TestGeminiWindowsExampleKeepsLiteralPaths(t *testing.T) {
 		{
 			name:       "shell metacharacters",
 			executable: "C:\\a%b!\\lc`.exe",
-			bundle:     `D:\o'brien\$(Write-Output unexpected)\`,
-			want:       "& 'C:\\a%b!\\lc`.exe' host hook --host gemini --bundle 'D:\\o''brien\\$(Write-Output unexpected)\\'",
+			bundle:     `D:\o'brien\$(Write-Output unexpected)`,
+			want:       "& 'C:\\a%b!\\lc`.exe' host hook --host gemini --bundle 'D:\\o''brien\\$(Write-Output unexpected)'",
 		},
 		{
 			name:       "typographic apostrophes",
@@ -256,8 +256,8 @@ func TestGeminiWindowsExampleKeepsLiteralPaths(t *testing.T) {
 		{
 			name:       "UNC",
 			executable: `\\server\share\lc.exe`,
-			bundle:     `\\server\share\My Bundle\`,
-			want:       `& '\\server\share\lc.exe' host hook --host gemini --bundle '\\server\share\My Bundle\'`,
+			bundle:     `\\server\share\My Bundle`,
+			want:       `& '\\server\share\lc.exe' host hook --host gemini --bundle '\\server\share\My Bundle'`,
 		},
 	}
 	for _, tc := range cases {
@@ -268,6 +268,24 @@ func TestGeminiWindowsExampleKeepsLiteralPaths(t *testing.T) {
 			}
 			assertGeminiExample(t, decodeGeminiExample(t, raw), tc.want)
 		})
+	}
+}
+
+func TestGeminiWindowsExampleRejectsLegacyNativeQuotingLoss(t *testing.T) {
+	for _, path := range []string{`D:\My Bundle\`, "D:\\tab\tpath\\", "D:\\wide\u2003space\\"} {
+		if _, err := HostExample("gemini", `C:\lc.exe`, path, "windows"); !errors.Is(err, errExamplePath) {
+			t.Errorf("bundle %q: error = %v", path, err)
+		}
+		if _, err := HostExample("gemini", path, `D:\bundle`, "windows"); !errors.Is(err, errExamplePath) {
+			t.Errorf("executable %q: error = %v", path, err)
+		}
+	}
+	for _, path := range []string{`D:\`, `D:\bundle\`} {
+		raw, err := HostExample("gemini", `C:\lc.exe`, path, "windows")
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertGeminiExample(t, decodeGeminiExample(t, raw), `& 'C:\lc.exe' host hook --host gemini --bundle '`+path+`'`)
 	}
 }
 

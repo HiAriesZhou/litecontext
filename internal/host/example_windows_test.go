@@ -27,6 +27,13 @@ func TestMain(m *testing.M) {
 		if err != nil {
 			os.Exit(99)
 		}
+		if len(os.Args) != 7 {
+			os.Exit(99)
+		}
+		info, err := os.Stat(os.Args[6])
+		if err != nil || !info.IsDir() {
+			os.Exit(99)
+		}
 		// ASCII output avoids PowerShell 5.1's native stdout encoding changes.
 		if _, err = os.Stdout.WriteString(base64.StdEncoding.EncodeToString(raw) + "\n"); err != nil {
 			os.Exit(99)
@@ -49,7 +56,23 @@ func TestGeminiWindowsCommandPreservesNativeArgumentsAndExitCode(t *testing.T) {
 	if err := os.WriteFile(executable, binary, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	bundle := filepath.Join(t.TempDir(), "bundle %! o'brien ‘quoted’ ‚base‛ $(Write-Output unexpected) `") + `\`
+	wantBundle := filepath.Join(t.TempDir(), "bundle %! o'brien ‘quoted’ ‚base‛ $(Write-Output unexpected) `")
+	if err := os.MkdirAll(wantBundle, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bundle := wantBundle + `\`
+	if _, err := HostExample("gemini", executable, bundle, "windows"); err != errExamplePath {
+		t.Fatalf("unclean path must be refused before native quoting: %v", err)
+	}
+	// Match the CLI boundary: filepath.Abs cleans the caller's trailing
+	// separator while preserving the directory and drive/UNC root semantics.
+	bundle, err = filepath.Abs(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle != wantBundle {
+		t.Fatalf("cleaned path %q differs from fixture directory %q", bundle, wantBundle)
+	}
 	raw, err := HostExample("gemini", executable, bundle, "windows")
 	if err != nil {
 		t.Fatal(err)
