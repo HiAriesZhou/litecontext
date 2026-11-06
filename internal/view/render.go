@@ -159,9 +159,9 @@ func evidenceText(refs []session.Ref) string {
 func nextAction(status string) string {
 	switch status {
 	case "candidate":
-		return "confirm"
+		return "confirm, correct, supersede, or revoke"
 	case "active":
-		return "correct, supersede, or revoke"
+		return "supersede or revoke"
 	case "superseded", "revoked":
 		return "none"
 	default:
