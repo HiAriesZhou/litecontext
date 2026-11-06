@@ -13,6 +13,8 @@ LiteContext is one local product and one repository. Knowledge, Memory, and Cont
 
 Knowledge and Memory both supply Context. A changed document updates Knowledge. It does not overwrite a project decision. Context may select the new document, the current decision, and the task state together.
 
+The [desktop workbench](desktop-workbench.md) is a foreground read-only client of this core. It selects a bundle through the native picker and invokes the packaged inspection command; it does not add a daemon, network listener or second store.
+
 The default delivery is small: current constraints, task progress, and an index of what can be retrieved. The agent retrieves more when the task needs it. Source text and earlier model output are data. They do not grant permission to change host instructions.
 
 ## Session contract
