@@ -51,13 +51,25 @@ func resolveProfile(name string) (profile, bool) {
 	}
 }
 
+type namedEvent struct {
+	name string
+	rule eventRule
+}
+
+func codingAgentEventList() []namedEvent {
+	return []namedEvent{
+		{name: "SessionStart", rule: eventRule{kind: "session_start", inject: true, deadline: otherDeadline}},
+		{name: "UserPromptSubmit", rule: eventRule{kind: "prompt", inject: true, deadline: promptDeadline}},
+		{name: "PreCompact", rule: eventRule{kind: "compact", inject: false, deadline: otherDeadline}},
+		{name: "Stop", rule: eventRule{kind: "stop", inject: false, deadline: otherDeadline}},
+		{name: "SessionEnd", rule: eventRule{kind: "stop", inject: false, deadline: otherDeadline}},
+	}
+}
+
 func codingAgentProfile(name string) profile {
-	events := map[string]eventRule{
-		"SessionStart":     {kind: "session_start", inject: true, deadline: otherDeadline},
-		"UserPromptSubmit": {kind: "prompt", inject: true, deadline: promptDeadline},
-		"PreCompact":       {kind: "compact", inject: false, deadline: otherDeadline},
-		"Stop":             {kind: "stop", inject: false, deadline: otherDeadline},
-		"SessionEnd":       {kind: "stop", inject: false, deadline: otherDeadline},
+	events := make(map[string]eventRule, len(codingAgentEventList())+1)
+	for _, event := range codingAgentEventList() {
+		events[event.name] = event.rule
 	}
 	// The unnamed profile also accepts the one Gemini event already in use.
 	// Its failures stay silent: Gemini parses stderr as hook output.
