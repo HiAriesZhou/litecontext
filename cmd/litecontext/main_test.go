@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -569,5 +570,97 @@ func TestViewCommandWritesStoredRecordsWithoutChangingMemory(t *testing.T) {
 	}
 	if err := run([]string{"view", "--bundle", dir}); err == nil || !strings.Contains(err.Error(), "usage:") {
 		t.Fatalf("usage: %v", err)
+	}
+}
+
+func TestHostExamplePrintsCodexHooksWithoutWriting(t *testing.T) {
+	if err := run([]string{"host"}); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("usage: %v", err)
+	}
+	if err := run([]string{"host", "example"}); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("usage: %v", err)
+	}
+	if err := run([]string{"host", "other", "--bundle", t.TempDir()}); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("usage: %v", err)
+	}
+	bundle := filepath.Join(t.TempDir(), "my bundle")
+	stdout, stderr := captureOutputs(t, "", func() error {
+		return run([]string{"host", "example", "--bundle", bundle})
+	})
+	if stderr != "" {
+		t.Fatalf("stderr %q", stderr)
+	}
+	if _, err := os.Stat(bundle); !os.IsNotExist(err) {
+		t.Fatalf("created bundle path: %v", err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, err = filepath.Abs(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	absBundle, err := filepath.Abs(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Type           string `json:"type"`
+				Command        string `json:"command"`
+				CommandWindows string `json:"commandWindows"`
+				Timeout        int    `json:"timeout"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatalf("json: %v\n%s", err, stdout)
+	}
+	for _, name := range []string{"SessionStart", "UserPromptSubmit", "PreCompact", "Stop", "SessionEnd"} {
+		groups := doc.Hooks[name]
+		if len(groups) != 1 || len(groups[0].Hooks) != 1 {
+			t.Fatalf("%s %#v", name, groups)
+		}
+		hook := groups[0].Hooks[0]
+		if hook.Type != "command" || !strings.Contains(hook.Command, executable) || !strings.Contains(hook.Command, absBundle) {
+			t.Fatalf("%s command %q", name, hook.Command)
+		}
+		wantTimeout := 10
+		if name == "SessionEnd" {
+			wantTimeout = 3
+		}
+		if hook.Timeout != wantTimeout {
+			t.Fatalf("%s timeout %d", name, hook.Timeout)
+		}
+		if runtime.GOOS == "windows" {
+			if hook.CommandWindows != hook.Command {
+				t.Fatalf("%s windows command %q", name, hook.CommandWindows)
+			}
+		} else if hook.CommandWindows != "" || strings.Contains(stdout, "commandWindows") {
+			t.Fatal("posix example included commandWindows")
+		}
+	}
+	if strings.Contains(stdout, "matcher") || strings.Contains(stdout, "BeforeAgent") {
+		t.Fatalf("unexpected example:\n%s", stdout)
+	}
+	relative := captureStdout(t, func() error {
+		return run([]string{"host", "example", "--bundle", "relative bundle"})
+	})
+	var decoded struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal([]byte(relative), &decoded); err != nil {
+		t.Fatalf("relative json: %v\n%s", err, relative)
+	}
+	absRelative, err := filepath.Abs("relative bundle")
+	command := decoded.Hooks["SessionEnd"][0].Hooks[0].Command
+	if err != nil || !strings.Contains(command, absRelative) {
+		t.Fatalf("relative path was not made absolute: %s", command)
 	}
 }

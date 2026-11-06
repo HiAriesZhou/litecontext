@@ -112,6 +112,7 @@ Usage:
   lc visibility set ITEM_ID --source SOURCE_ID --visibility private|team|public|inherit --bundle DIR [--json]
   lc serve --bundle DIR [--once]
   lc host hook --bundle DIR [--host codex|claude|gemini] [--visibility public|team|private]
+  lc host example --bundle DIR
   lc inspect --bundle DIR [--json]
   lc view --bundle DIR --output FILE
 
