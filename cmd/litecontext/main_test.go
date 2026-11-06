@@ -321,6 +321,22 @@ func TestServeCheckpointFeedsTheNextPrepare(t *testing.T) {
 	}
 }
 
+func TestInspectEmptyBundleKeepsArrayContract(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "empty")
+	captureStdout(t, func() error { return run([]string{"bundle", "init", dir, "--json"}) })
+	output := captureStdout(t, func() error { return run([]string{"inspect", "--bundle", dir, "--json"}) })
+	var report map[string]any
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"sources", "memories", "currentMemories", "events", "deliveries", "failures"} {
+		items, ok := report[key].([]any)
+		if !ok || len(items) != 0 {
+			t.Errorf("%s must be an empty array, got %#v", key, report[key])
+		}
+	}
+}
+
 func TestInspectCommandReportsTheDelivery(t *testing.T) {
 	source := t.TempDir()
 	if err := os.WriteFile(filepath.Join(source, "note.md"), []byte("# Rule\n\nPortable rule.\n"), 0600); err != nil {
