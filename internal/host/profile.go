@@ -81,14 +81,22 @@ func codingAgentProfile(name string) profile {
 	return profile{events: events, silent: silent, decode: decodeCodingAgentHook, encode: injectionJSON}
 }
 
+func geminiEventList() []namedEvent {
+	return []namedEvent{
+		{name: "BeforeAgent", rule: eventRule{kind: "prompt", inject: true, deadline: promptDeadline}},
+	}
+}
+
 func geminiProfile() profile {
+	events := make(map[string]eventRule, len(geminiEventList()))
+	for _, event := range geminiEventList() {
+		events[event.name] = event.rule
+	}
 	return profile{
 		quiet:  true,
 		decode: decodeCodingAgentHook,
 		encode: injectionJSON,
-		events: map[string]eventRule{
-			"BeforeAgent": {kind: "prompt", inject: true, deadline: promptDeadline},
-		},
+		events: events,
 	}
 }
 

@@ -1,6 +1,6 @@
 # Architecture
 
-LiteContext is a local-first information layer with a file-based collection core and CLI. It runs without a daemon or network listener. A cold Codex hook over 200 notes on one macOS machine returned in 22-29 ms, so a hook does not keep a resident process. Bundle storage is implemented for macOS and Linux, using atomic rename and file locks. CI runs the same suite on Windows. A Windows agent hook has not been observed. Codex on Windows selects `commandWindows`; `lc host example` includes that field only when the command runs on Windows.
+LiteContext is a local-first information layer with a file-based collection core and CLI. It runs without a daemon or network listener. A cold Codex hook over 200 notes on one macOS machine returned in 22-29 ms, so a hook does not keep a resident process. Bundle storage is implemented for macOS and Linux, using atomic rename and file locks. CI runs the same suite on Windows. A Windows agent hook has not been observed. Codex on Windows selects `commandWindows`; the Codex fragment from `lc host example` includes that field only when the command runs on Windows. Claude and Gemini fragments do not include it.
 
 ```text
 Selected Markdown files → read-only scanner → validated ContextItems → atomic bundle snapshot
