@@ -10,7 +10,7 @@ Early development. The current CLI initializes and validates a version 1 context
 
 ## Quick start
 
-Requires Go 1.26 or later on macOS or Linux.
+Requires Go 1.26 or later on macOS, Linux, or Windows.
 
 ```sh
 go build -o ./bin/lc ./cmd/litecontext
@@ -29,11 +29,14 @@ JSON
 ./bin/lc host hook --host gemini --bundle /path/to/new-bundle <<'JSON'
 {"hook_event_name":"BeforeAgent","session_id":"example","prompt":"project rule"}
 JSON
+./bin/lc host example --bundle /path/to/new-bundle
 ./bin/lc inspect --bundle /path/to/new-bundle
 ./bin/lc view --bundle /path/to/new-bundle --output /path/to/report.html
 ```
 
 `lc host hook` gives `UserPromptSubmit` and `BeforeAgent` 200ms and any other event one second. When the bundle or the deadline fails, it writes nothing to stdout and exits 0. Codex and Claude Code also write one stderr line. Gemini events do not.
+
+`lc host example --bundle DIR` prints a Codex hooks.json document for this executable and does not write it. Run the built binary on the machine that will load the hook. macOS and Linux omit `commandWindows`; run the command on Windows to produce that field. `SessionEnd` uses a 3 second Codex timeout, and the other events use 10 seconds.
 
 The bundle destination must be absent or empty. Reuse the same source name to refresh its snapshot. Source files are read only. Keep bundles outside source repositories when possible: they contain collected content and should not be committed.
 
@@ -46,7 +49,7 @@ The bundle destination must be absent or empty. Reuse the same source name to re
 - `internal/ingest/` — read-only Markdown scanning.
 - `internal/session/` — session contract, task checkpoints, memory, and inspect.
 - `internal/view/` — read-only HTML report.
-- `internal/host/` — one-shot hook profiles for Codex, Claude Code, and Gemini CLI `BeforeAgent`.
+- `internal/host/` — one-shot hook profiles for Codex, Claude Code, and Gemini CLI `BeforeAgent`, and a printed Codex hooks.json example.
 - `contracts/context-model/v1/` — portable record schemas.
 - `contracts/bundle/v1/` — bundle manifest and snapshot schemas.
 - `docs/architecture/overview.md` — implemented storage and collection.
