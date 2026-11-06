@@ -86,7 +86,7 @@ func Inspect(ctx context.Context, opened *bundle.Bundle) (Report, error) {
 			report.Failures = append(report.Failures, "memory list capped")
 		}
 		sort.Slice(records, func(i, j int) bool { return records[i].ID < records[j].ID })
-		report.Memories = records
+		report.Memories = append(report.Memories, records...)
 		for _, record := range records {
 			if record.Status == "active" {
 				report.CurrentMemories = append(report.CurrentMemories, record)
