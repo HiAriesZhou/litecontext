@@ -35,6 +35,8 @@ func run(arguments []string) error {
 		return runRead(arguments[0], arguments[1:])
 	case "serve":
 		return runServe(arguments[1:])
+	case "client-config":
+		return runClientConfig(arguments[1:])
 	case "host":
 		return runHost(arguments[1:])
 	case "inspect":
@@ -110,6 +112,7 @@ Usage:
   lc item show ITEM_ID --source SOURCE_ID --bundle DIR [--record-hash HASH] [--json]
   lc search QUERY --bundle DIR [--source SOURCE_ID,...] [--visibility public|team|private] [--limit N] [--json]
   lc visibility set ITEM_ID --source SOURCE_ID --visibility private|team|public|inherit --bundle DIR [--json]
+  lc client-config [--state-dir DIR]  (one JSON request on stdin)
   lc serve --bundle DIR [--once]
   lc host hook --bundle DIR [--host codex|claude|gemini] [--visibility public|team|private]
   lc host example --bundle DIR [--host codex|claude|gemini]
