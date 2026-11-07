@@ -528,6 +528,9 @@ func validID(id string) bool {
 }
 
 func publicError(err error) string {
+	if errors.Is(err, ErrMemoryChanged) {
+		return ErrMemoryChanged.Error()
+	}
 	if errors.Is(err, bundle.ErrUnavailable) {
 		return "not available"
 	}
