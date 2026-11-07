@@ -115,6 +115,56 @@
         "ref": { "$ref": "#/$defs/ref" }
       }
     },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "text",
+        "scope",
+        "visibility",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "candidate",
+            "active",
+            "superseded",
+            "revoked"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "visibility": {
+          "enum": [
+            "public",
+            "team",
+            "private"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "supersedes": {
+          "type": "string"
+        },
+        "supersededBy": {
+          "type": "string"
+        }
+      }
+    },
     "memoryChange": {
       "type": "object",
       "additionalProperties": false,
@@ -126,7 +176,8 @@
         "scope": { "type": "string" },
         "visibility": { "type": "string" },
         "evidence": { "type": "array", "items": { "$ref": "#/$defs/ref" } },
-        "supersedes": { "type": "string" }
+        "supersedes": { "type": "string" },
+        "expected": { "$ref": "#/$defs/memory" }
       }
     }
   }

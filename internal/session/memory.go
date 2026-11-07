@@ -18,14 +18,17 @@ import (
 const maxMemoryFiles = 50
 
 // MemoryChange is one explicit change to a memory. Nothing here activates a memory by itself.
+var ErrMemoryChanged = errors.New("memory changed; refresh before retrying")
+
 type MemoryChange struct {
-	Action     string `json:"action"`
-	ID         string `json:"id"`
-	Text       string `json:"text,omitempty"`
-	Scope      string `json:"scope,omitempty"`
-	Visibility string `json:"visibility,omitempty"`
-	Evidence   []Ref  `json:"evidence,omitempty"`
-	Supersedes string `json:"supersedes,omitempty"`
+	Expected   *MemoryRecord `json:"expected,omitempty"`
+	Action     string        `json:"action"`
+	ID         string        `json:"id"`
+	Text       string        `json:"text,omitempty"`
+	Scope      string        `json:"scope,omitempty"`
+	Visibility string        `json:"visibility,omitempty"`
+	Evidence   []Ref         `json:"evidence,omitempty"`
+	Supersedes string        `json:"supersedes,omitempty"`
 }
 
 // MemoryRecord is a cited conclusion stored outside the evidence snapshot.
@@ -49,11 +52,14 @@ func ApplyMemory(ctx context.Context, bundleDir string, change MemoryChange) (Me
 	}
 	switch change.Action {
 	case "propose":
+		if change.Expected != nil {
+			return MemoryRecord{}, fmt.Errorf("invalid memory")
+		}
 		return proposeMemory(ctx, bundleDir, change)
 	case "confirm":
-		return setMemoryStatus(ctx, bundleDir, change.ID, "candidate", "active")
+		return setMemoryStatus(ctx, bundleDir, change, "candidate", "active")
 	case "revoke":
-		return setMemoryStatus(ctx, bundleDir, change.ID, "", "revoked")
+		return setMemoryStatus(ctx, bundleDir, change, "", "revoked")
 	case "correct":
 		return correctMemory(ctx, bundleDir, change)
 	case "supersede":
@@ -95,6 +101,9 @@ func correctMemory(ctx context.Context, bundleDir string, change MemoryChange) (
 		if err != nil {
 			return err
 		}
+		if err := checkExpected(record, change.Expected); err != nil {
+			return err
+		}
 		if record.Status != "candidate" {
 			return fmt.Errorf("invalid memory")
 		}
@@ -108,14 +117,17 @@ func correctMemory(ctx context.Context, bundleDir string, change MemoryChange) (
 	return updated, err
 }
 
-func setMemoryStatus(ctx context.Context, bundleDir, id, from, to string) (MemoryRecord, error) {
-	if !validMemoryID(id) {
+func setMemoryStatus(ctx context.Context, bundleDir string, change MemoryChange, from, to string) (MemoryRecord, error) {
+	if !validMemoryID(change.ID) {
 		return MemoryRecord{}, fmt.Errorf("invalid memory")
 	}
 	var updated MemoryRecord
 	err := withMemory(ctx, bundleDir, func(dir *os.Root) error {
-		record, err := readMemoryFile(dir, id)
+		record, err := readMemoryFile(dir, change.ID)
 		if err != nil {
+			return err
+		}
+		if err := checkExpected(record, change.Expected); err != nil {
 			return err
 		}
 		if from != "" && record.Status != from {
@@ -151,6 +163,9 @@ func supersedeMemory(ctx context.Context, bundleDir string, change MemoryChange)
 		}
 		previous, err := readMemoryFile(dir, change.Supersedes)
 		if err != nil {
+			return err
+		}
+		if err := checkExpected(previous, change.Expected); err != nil {
 			return err
 		}
 		if previous.Status != "candidate" && previous.Status != "active" {
@@ -345,7 +360,7 @@ func withMemory(ctx context.Context, bundleDir string, fn func(*os.Root) error) 
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("invalid memory")
 		}
-		if strings.Contains(err.Error(), "invalid memory") {
+		if errors.Is(err, ErrMemoryChanged) || strings.Contains(err.Error(), "invalid memory") {
 			return err
 		}
 		return fmt.Errorf("memory storage failed")
@@ -406,4 +421,24 @@ func canonicalMemory(record MemoryRecord) ([]byte, error) {
 		return nil, err
 	}
 	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+}
+
+// Compare the complete record while holding the same lock as the write. Source
+// generation is not a memory revision. Omitted expected preserves CLI behavior.
+func checkExpected(actual MemoryRecord, expected *MemoryRecord) error {
+	if expected == nil {
+		return nil
+	}
+	a, err := canonicalMemory(actual)
+	if err != nil {
+		return err
+	}
+	b, err := canonicalMemory(*expected)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(a, b) {
+		return ErrMemoryChanged
+	}
+	return nil
 }
