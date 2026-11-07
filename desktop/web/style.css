@@ -88,3 +88,11 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.9; margin: 
   main { padding: 22px 22px 0; }
   .sidebar { padding: 22px 14px 18px; }
 }
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.memory-editor { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 12px; }
+.memory-editor h3 { font-size: 15px; }
+.memory-editor label { display: block; margin: 16px 0 8px; font-weight: 550; }
+textarea { width: 100%; resize: vertical; min-height: 110px; max-height: 260px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); color: var(--ink); padding: 10px; font: inherit; line-height: 1.8; }
+textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.form-error { color: #823924; line-height: 1.8; }

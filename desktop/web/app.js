@@ -1,3 +1,4 @@
+import { memoryActions, actionLabels, actionHelp, memoryEdit } from "./memory.js";
 import { sections, states, failureLabels, text, count, incomplete, describeError, basename, evidence } from "./model.js";
 
 const $ = (id) => document.getElementById(id);
@@ -7,6 +8,10 @@ let selectedPath = "";
 let loadedAt = null;
 let busy = false;
 let lastError = "";
+let notice = "";
+let draft = null;
+let openMemory = "";
+let writeBlocked = false;
 
 function element(tag, content, className) {
   const node = document.createElement(tag);
@@ -54,9 +59,68 @@ function renderMemories(report, container) {
     for (const ref of memory.evidence || []) body.append(element("pre", evidence(ref), "citation"));
     if (memory.supersedes) body.append(element("p", `替代：${memory.supersedes}`, "mono"));
     if (memory.supersededBy) body.append(element("p", `后续记忆：${memory.supersededBy}`, "mono"));
-    container.append(record(text(memory.text), `${text(memory.scope)} · ${text(memory.visibility)}`, body,
-      pill(states[memory.status] || "未知状态", memory.status === "active" ? "positive" : "")));
+    const row = record(text(memory.text), `${text(memory.scope)} · ${text(memory.visibility)}`, body,
+      pill(states[memory.status] || "未知状态", memory.status === "active" ? "positive" : ""));
+    row.open = openMemory === memory.id;
+    row.addEventListener("toggle", () => { if (row.open) openMemory = memory.id; });
+    const blocked = busy || writeBlocked || incomplete(report, "memories") || report.failures.includes("snapshot changed");
+    if (draft?.memory.id === memory.id) {
+      const editor = element("div", undefined, "memory-editor");
+      editor.append(element("h3", actionLabels[draft.action]), element("p", actionHelp[draft.action], "muted"));
+      if (["correct", "supersede"].includes(draft.action)) {
+        const label = element("label", "记忆内容"); label.htmlFor = "memory-text";
+        const input = element("textarea"); input.id = "memory-text"; input.value = draft.text; input.rows = 5; input.disabled = busy;
+        input.addEventListener("input", () => { draft.text = input.value; });
+        editor.append(label, input, element("p", "最多 2000 字节；保留原有引用。", "muted"));
+      }
+      if (draft.error) { const error = element("p", draft.error, "form-error"); error.setAttribute("role", "alert"); editor.append(error); }
+      const actions = element("div", undefined, "actions");
+      actions.append(actionButton("取消", () => { draft = null; render(); $("content").focus?.(); }, busy),
+        actionButton(busy ? "正在保存…" : draft.action === "correct" ? "保存候选" : actionLabels[draft.action], submitMemory, blocked));
+      editor.append(actions); body.append(editor);
+    } else {
+      const actions = element("div", undefined, "actions");
+      for (const action of memoryActions(memory.status)) actions.append(actionButton(actionLabels[action], () => {
+        draft = { action, memory, text: memory.text, error: "" }; openMemory = memory.id; notice = ""; render();
+        focusEditor();
+      }, blocked || Boolean(draft) || (action === "supersede" && report.memories.length >= 50)));
+      if (memory.status === "active" && report.memories.length >= 50) actions.append(element("p", "已达 50 条记录上限，暂不能创建替代。仍可撤销。", "muted"));
+      body.append(actions);
+    }
+    container.append(row);
   }
+}
+function focusEditor() {
+  const target = ["correct", "supersede"].includes(draft?.action) ? document.getElementById("memory-text") : $("content");
+  target?.focus?.();
+}
+function actionButton(label, handler, disabled) {
+  const button = element("button", label, "button secondary"); button.type = "button"; button.disabled = disabled;
+  button.addEventListener("click", handler); return button;
+}
+async function submitMemory() {
+  if (busy || !draft || writeBlocked) return;
+  let edit;
+  try { edit = memoryEdit(draft, draft.action === "supersede" ? `mem-${window.crypto.randomUUID()}` : ""); }
+  catch (error) { draft.error = error.message; render(); focusEditor(); return; }
+  busy = true; draft.error = ""; notice = ""; render();
+  try {
+    const saved = await window.__TAURI__.core.invoke("change_memory", { bundlePath: selectedPath, edit });
+    draft = null; openMemory = saved.id;
+    notice = "记忆已保存。";
+    try {
+      snapshot = await window.__TAURI__.core.invoke("refresh_bundle"); loadedAt = new Date(); lastError = ""; writeBlocked = false;
+    } catch (error) {
+      writeBlocked = true;
+      lastError = `记忆已保存，但刷新失败。${describeError(error, true)} 请刷新后再操作。`;
+    }
+  } catch (error) {
+    draft.error = text(error?.message, "操作结果尚未确认，请刷新后检查，勿重复提交。");
+    if (error?.code !== "invalid_change") {
+      writeBlocked = true;
+      lastError = `${draft.error} 以下仍是上次读取的内容。`;
+    }
+  } finally { busy = false; render(); if (draft) focusEditor(); else $("content").focus?.(); }
 }
 function renderTask(report, container) {
   if (!report.task) return container.append(empty("没有当前任务", "尚未保存任务检查点。没有记录不代表 Agent 没有在工作。"));
@@ -98,9 +162,9 @@ function render() {
     ? `上次读取 ${loadedAt.toLocaleTimeString("zh-CN")} · 手动刷新`
     : "选择一个 bundle，查看实际保存的信息。";
   $("timing").textContent = snapshot ? `读取耗时 ${snapshot.elapsedMs} ms` : "";
-  $("choose").disabled = busy;
+  $("choose").disabled = busy || Boolean(draft);
   $("refresh").disabled = busy || !selectedPath;
-  $("status").textContent = busy ? "正在读取本机数据…" : "";
+  $("status").textContent = busy ? "正在处理本机数据…" : notice;
   $("content").setAttribute("aria-busy", String(busy));
   $("error").hidden = !lastError;
   $("error").textContent = lastError;
@@ -127,7 +191,7 @@ function render() {
   }
 }
 async function load(choose) {
-  if (busy) return;
+  if (busy || (choose && draft)) return;
   const previousError = lastError;
   busy = true;
   lastError = "";
@@ -138,6 +202,7 @@ async function load(choose) {
       snapshot = result;
       selectedPath = result.bundlePath;
       loadedAt = new Date();
+      draft = null; writeBlocked = false; notice = "";
     } else {
       lastError = previousError;
     }
@@ -147,6 +212,7 @@ async function load(choose) {
       loadedAt = null;
       selectedPath = error?.bundlePath || "";
     }
+    writeBlocked = true;
     lastError = describeError(error, Boolean(snapshot));
   } finally {
     busy = false;

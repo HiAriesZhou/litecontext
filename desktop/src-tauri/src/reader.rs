@@ -1,7 +1,7 @@
 use serde::Serialize;
 use serde_json::Value;
 use std::{
-    io::Read,
+    io::{Read, Write},
     path::Path,
     process::{Child, Command, Stdio},
     sync::{mpsc, Mutex},
@@ -111,7 +111,18 @@ fn read_with_limits(
     deadline: Duration,
     limit: usize,
 ) -> Result<Value, ReadError> {
-    let (stdout, stderr) = {
+    run(core, bundle, processes, deadline, limit, None).and_then(|bytes| validate(&bytes))
+}
+
+fn run(
+    core: &Path,
+    bundle: &Path,
+    processes: &ProcessSlot,
+    deadline: Duration,
+    limit: usize,
+    request: Option<Vec<u8>>,
+) -> Result<Vec<u8>, ReadError> {
+    let (stdout, stderr, input) = {
         let mut slot = processes
             .0
             .lock()
@@ -119,12 +130,22 @@ fn read_with_limits(
         if slot.closing {
             return Err(ReadError::new("closed", "应用正在关闭。"));
         }
-        let mut child = Command::new(core)
-            .arg("inspect")
-            .arg("--bundle")
-            .arg(bundle)
-            .arg("--json")
-            .stdin(Stdio::null())
+        let mut command = Command::new(core);
+        if request.is_some() {
+            command.args(["serve", "--once"]);
+        } else {
+            command.arg("inspect");
+        }
+        command.arg("--bundle").arg(bundle);
+        if request.is_none() {
+            command.arg("--json");
+        }
+        let mut child = command
+            .stdin(if request.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -134,11 +155,23 @@ fn read_with_limits(
                     "无法启动应用内的读取程序，请重新构建或安装应用。",
                 )
             })?;
-        let streams = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
+        let streams = (
+            child.stdout.take().unwrap(),
+            child.stderr.take().unwrap(),
+            child.stdin.take(),
+        );
         slot.child = Some(child);
         streams
     };
     let _cleanup = Cleanup(processes);
+    let (input_send, input_receive) = mpsc::channel();
+    if let (Some(mut input), Some(request)) = (input, request) {
+        thread::spawn(move || {
+            let _ = input_send.send(input.write_all(&request));
+        });
+    } else {
+        let _ = input_send.send(Ok(()));
+    }
     let (out_send, out_receive) = mpsc::channel();
     let (err_send, err_receive) = mpsc::channel();
     // Pipe readers finish when the bounded core exits or is killed. They never
@@ -151,7 +184,19 @@ fn read_with_limits(
     });
     let start = Instant::now();
     let (mut output, mut errors) = (None, None);
+    let mut input_done = false;
     loop {
+        if !input_done {
+            if let Ok(result) = input_receive.try_recv() {
+                result.map_err(|_| {
+                    ReadError::new(
+                        "write_unknown",
+                        "操作结果尚未确认，请刷新后检查，勿重复提交。",
+                    )
+                })?;
+                input_done = true;
+            }
+        }
         if output.is_none() {
             if let Ok(value) = out_receive.try_recv() {
                 output = Some(value?);
@@ -183,7 +228,9 @@ fn read_with_limits(
                 ));
             }
             if let (Some(output), Some(_)) = (&output, &errors) {
-                return validate(output);
+                if input_done {
+                    return Ok(output.clone());
+                }
             }
         }
         if start.elapsed() >= deadline {
@@ -288,5 +335,166 @@ printf '%s' '{"generation":0,"sources":[],"memories":[],"currentMemories":[],"ev
             read(&core, Path::new("/unused"), &slot).unwrap_err().code,
             "closed"
         );
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryEdit {
+    pub action: String,
+    pub expected: Value,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub replacement_id: String,
+}
+
+fn memory_request(edit: MemoryEdit) -> Result<Vec<u8>, ReadError> {
+    let old = &edit.expected;
+    if !old.is_object() || !old["id"].is_string() || !old["status"].is_string() {
+        return Err(ReadError::new("invalid_change", "记忆记录不完整，请刷新。"));
+    }
+    let mut change = serde_json::json!({"action":edit.action,"id":old["id"],"expected":old});
+    match edit.action.as_str() {
+        "confirm" | "revoke" => {}
+        "correct" => {
+            change["text"] = Value::String(edit.text);
+        }
+        "supersede" => {
+            change["id"] = Value::String(edit.replacement_id);
+            change["supersedes"] = old["id"].clone();
+            change["text"] = Value::String(edit.text);
+            for key in ["scope", "visibility", "evidence"] {
+                change[key] = old[key].clone();
+            }
+        }
+        _ => return Err(ReadError::new("invalid_change", "不支持这个记忆操作。")),
+    }
+    let mut bytes =
+        serde_json::to_vec(&serde_json::json!({"version":1,"op":"memory","memory":change}))
+            .map_err(|_| ReadError::new("invalid_change", "无法准备记忆操作。"))?;
+    if bytes.len() > 64 * 1024 {
+        return Err(ReadError::new("invalid_change", "记忆内容超过上限。"));
+    }
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+pub fn mutate(
+    core: &Path,
+    bundle: &Path,
+    processes: &ProcessSlot,
+    edit: MemoryEdit,
+) -> Result<Value, ReadError> {
+    let request = memory_request(edit)?;
+    let unknown = || {
+        ReadError::new(
+            "write_unknown",
+            "操作结果尚未确认，请刷新后检查，勿重复提交。",
+        )
+    };
+    let bytes = run(
+        core,
+        bundle,
+        processes,
+        Duration::from_secs(10),
+        MAX_REPORT,
+        Some(request),
+    )
+    .map_err(|_| unknown())?;
+    let response: Value = serde_json::from_slice(&bytes).map_err(|_| unknown())?;
+    if response["version"] != 1 || response["op"] != "memory" {
+        return Err(unknown());
+    }
+    if response["ok"] == false {
+        return Err(match response["error"].as_str() {
+            Some("memory changed; refresh before retrying") => {
+                ReadError::new("conflict", "这条记忆已被其它操作修改。请刷新后重新检查。")
+            }
+            Some("memory capacity reached") => ReadError::new(
+                "capacity",
+                "已达到记忆管理的 50 条记录上限，未创建替代，旧记忆保持不变。",
+            ),
+            Some("invalid memory") | Some("invalid request") => {
+                ReadError::new("invalid_change", "操作未被接受，请检查内容和记忆状态。")
+            }
+            _ => unknown(),
+        });
+    }
+    if response["ok"] != true || !response["result"].is_object() {
+        return Err(unknown());
+    }
+    Ok(response["result"].clone())
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+    fn edit(action: &str) -> MemoryEdit {
+        MemoryEdit {
+            action: action.into(),
+            text: "New \"rule\"\nline".into(),
+            replacement_id: "new-rule".into(),
+            expected: serde_json::json!({"id":"rule","status":"active","text":"Old","scope":"project","visibility":"private","evidence":[{"sourceId":"src_test","itemId":"itm_test"}]}),
+        }
+    }
+    #[test]
+    fn replacement_preserves_metadata_and_expected_record() {
+        let request: Value =
+            serde_json::from_slice(&memory_request(edit("supersede")).unwrap()).unwrap();
+        let memory = &request["memory"];
+        assert_eq!(memory["id"], "new-rule");
+        assert_eq!(memory["supersedes"], "rule");
+        assert_eq!(memory["evidence"], memory["expected"]["evidence"]);
+        assert_eq!(memory["visibility"], "private");
+        assert_eq!(
+            memory_request(edit("propose")).unwrap_err().code,
+            "invalid_change"
+        );
+    }
+    #[test]
+    #[cfg(unix)]
+    fn writes_one_json_request_and_distinguishes_conflict_from_uncertain_result() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let core = dir.path().join("lc");
+        for (response, expected) in [
+            (
+                r#"{"version":1,"op":"memory","ok":true,"result":{"id":"rule"}}"#,
+                "ok",
+            ),
+            (
+                r#"{"version":1,"op":"memory","ok":false,"error":"memory changed; refresh before retrying"}"#,
+                "conflict",
+            ),
+            (
+                r#"{"version":1,"op":"memory","ok":false,"error":"request failed"}"#,
+                "write_unknown",
+            ),
+            ("{}", "write_unknown"),
+        ] {
+            std::fs::write(&core,format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$0.args\"\ncat > \"$0.input\"\nprintf '%s' '{response}'\n")).unwrap();
+            std::fs::set_permissions(&core, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let slot = ProcessSlot::default();
+            let result = mutate(
+                &core,
+                Path::new("/tmp/中文 bundle's $(literal)"),
+                &slot,
+                edit("revoke"),
+            );
+            if expected == "ok" {
+                assert!(result.is_ok());
+            } else {
+                assert_eq!(result.unwrap_err().code, expected);
+            }
+            assert!(slot.0.lock().unwrap().child.is_none());
+            assert_eq!(
+                std::fs::read_to_string(core.with_extension("args")).unwrap(),
+                "serve\n--once\n--bundle\n/tmp/中文 bundle's $(literal)\n"
+            );
+            let input = std::fs::read(core.with_extension("input")).unwrap();
+            let parsed: Value = serde_json::from_slice(&input).unwrap();
+            assert_eq!(parsed["memory"]["expected"]["id"], "rule");
+        }
     }
 }
