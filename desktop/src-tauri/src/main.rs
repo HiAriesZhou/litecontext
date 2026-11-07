@@ -16,6 +16,7 @@ use tauri::Manager;
 struct Workspace {
     selected: Mutex<Option<PathBuf>>,
     busy: AtomicBool,
+    client: Mutex<Option<serde_json::Value>>,
     processes: Arc<reader::ProcessSlot>,
 }
 
@@ -91,6 +92,10 @@ async fn choose_bundle(
         .selected
         .lock()
         .map_err(|_| reader::ReadError::new("state", "请重新打开应用。"))? = Some(path.clone());
+    *state
+        .client
+        .lock()
+        .map_err(|_| reader::ReadError::new("state", "请重新打开应用。"))? = None;
     inspect(path, state.processes.clone()).await.map(Some)
 }
 
@@ -138,13 +143,122 @@ async fn change_memory(
         })?
 }
 
+async fn client_call(
+    state: &Workspace,
+    request: serde_json::Value,
+) -> Result<serde_json::Value, reader::ReadError> {
+    let core = core_path()?;
+    let processes = state.processes.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        reader::client_operation(&core, &processes, &request)
+    })
+    .await
+    .map_err(|_| reader::ReadError::new("config_unknown", "配置结果尚未确认，请重新预览。"))?
+}
+
+#[tauri::command]
+async fn preview_client(
+    state: tauri::State<'_, Workspace>,
+    host: String,
+    choose: bool,
+) -> Result<Option<serde_json::Value>, reader::ReadError> {
+    let _busy = state.enter()?;
+    if !["codex", "claude", "gemini"].contains(&host.as_str()) {
+        return Err(reader::ReadError::new(
+            "config_invalid",
+            "不支持这个客户端。",
+        ));
+    }
+    let bundle = state
+        .selected
+        .lock()
+        .map_err(|_| reader::ReadError::new("state", "请重新打开应用。"))?
+        .clone()
+        .ok_or_else(|| reader::ReadError::new("no_bundle", "请先选择 bundle。"))?;
+    let previous = state
+        .client
+        .lock()
+        .map_err(|_| reader::ReadError::new("state", "请重新打开应用。"))?
+        .clone();
+    let project = if choose || previous.is_none() {
+        let Some(folder) = rfd::AsyncFileDialog::new()
+            .set_title("选择要接入的项目目录")
+            .pick_folder()
+            .await
+        else {
+            return Ok(None);
+        };
+        folder.path().to_string_lossy().into_owned()
+    } else {
+        previous
+            .as_ref()
+            .and_then(|v| v["project"].as_str())
+            .ok_or_else(|| reader::ReadError::new("config_invalid", "请重新选择项目。"))?
+            .to_owned()
+    };
+    let request = serde_json::json!({"version":1,"op":"preview","host":host,"project":project,"bundle":bundle.to_string_lossy(),"executable":core_path()?.to_string_lossy()});
+    // Save selection even when parsing fails, but clear the previous write precondition.
+    *state
+        .client
+        .lock()
+        .map_err(|_| reader::ReadError::new("state", "请重新打开应用。"))? = Some(request.clone());
+    let plan = client_call(&state, request.clone()).await?;
+    let mut selected = request;
+    selected["project"] = plan["project"].clone();
+    selected["expected"] = plan["expected"].clone();
+    *state
+        .client
+        .lock()
+        .map_err(|_| reader::ReadError::new("state", "请重新打开应用。"))? = Some(selected);
+    Ok(Some(plan))
+}
+
+#[tauri::command]
+async fn change_client(
+    state: tauri::State<'_, Workspace>,
+    action: String,
+) -> Result<serde_json::Value, reader::ReadError> {
+    let _busy = state.enter()?;
+    if !["apply", "restore"].contains(&action.as_str()) {
+        return Err(reader::ReadError::new("config_invalid", "不支持这个操作。"));
+    }
+    let mut request = {
+        let mut slot = state
+            .client
+            .lock()
+            .map_err(|_| reader::ReadError::new("state", "请重新打开应用。"))?;
+        let selected = slot
+            .as_mut()
+            .ok_or_else(|| reader::ReadError::new("config_invalid", "请先预览配置。"))?;
+        if !selected["expected"].is_string() {
+            return Err(reader::ReadError::new(
+                "config_invalid",
+                "请先重新预览配置。",
+            ));
+        }
+        let request = selected.clone();
+        selected.as_object_mut().unwrap().remove("expected");
+        request
+    };
+    request["op"] = serde_json::Value::String(action);
+    let plan = client_call(&state, request.clone()).await?;
+    request["expected"] = plan["expected"].clone();
+    *state
+        .client
+        .lock()
+        .map_err(|_| reader::ReadError::new("state", "请重新打开应用。"))? = Some(request);
+    Ok(plan)
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(Workspace::default())
         .invoke_handler(tauri::generate_handler![
             choose_bundle,
             refresh_bundle,
-            change_memory
+            change_memory,
+            preview_client,
+            change_client
         ])
         .build(tauri::generate_context!())
         .expect("could not start LiteContext")

@@ -111,7 +111,21 @@ fn read_with_limits(
     deadline: Duration,
     limit: usize,
 ) -> Result<Value, ReadError> {
-    run(core, bundle, processes, deadline, limit, None).and_then(|bytes| validate(&bytes))
+    run(
+        core,
+        bundle,
+        processes,
+        deadline,
+        limit,
+        CoreOperation::Inspect,
+    )
+    .and_then(|bytes| validate(&bytes))
+}
+
+enum CoreOperation {
+    Inspect,
+    Memory(Vec<u8>),
+    Client(Vec<u8>),
 }
 
 fn run(
@@ -120,8 +134,13 @@ fn run(
     processes: &ProcessSlot,
     deadline: Duration,
     limit: usize,
-    request: Option<Vec<u8>>,
+    operation: CoreOperation,
 ) -> Result<Vec<u8>, ReadError> {
+    let (client, request) = match operation {
+        CoreOperation::Inspect => (false, None),
+        CoreOperation::Memory(input) => (false, Some(input)),
+        CoreOperation::Client(input) => (true, Some(input)),
+    };
     let (stdout, stderr, input) = {
         let mut slot = processes
             .0
@@ -131,12 +150,16 @@ fn run(
             return Err(ReadError::new("closed", "应用正在关闭。"));
         }
         let mut command = Command::new(core);
-        if request.is_some() {
+        if client {
+            command.arg("client-config");
+        } else if request.is_some() {
             command.args(["serve", "--once"]);
         } else {
             command.arg("inspect");
         }
-        command.arg("--bundle").arg(bundle);
+        if !client {
+            command.arg("--bundle").arg(bundle);
+        }
         if request.is_none() {
             command.arg("--json");
         }
@@ -399,7 +422,7 @@ pub fn mutate(
         processes,
         Duration::from_secs(10),
         MAX_REPORT,
-        Some(request),
+        CoreOperation::Memory(request),
     )
     .map_err(|_| unknown())?;
     let response: Value = serde_json::from_slice(&bytes).map_err(|_| unknown())?;
@@ -495,6 +518,101 @@ mod memory_tests {
             let input = std::fs::read(core.with_extension("input")).unwrap();
             let parsed: Value = serde_json::from_slice(&input).unwrap();
             assert_eq!(parsed["memory"]["expected"]["id"], "rule");
+        }
+    }
+}
+
+// Paths and expected state in this request are assembled by the native picker
+// flow. The webview cannot provide an executable or destination to this runner.
+pub fn client_operation(
+    core: &Path,
+    processes: &ProcessSlot,
+    request: &Value,
+) -> Result<Value, ReadError> {
+    let mut bytes = serde_json::to_vec(request)
+        .map_err(|_| ReadError::new("config_failed", "无法准备配置。"))?;
+    if bytes.len() > 64 * 1024 {
+        return Err(ReadError::new("config_failed", "配置请求过大。"));
+    }
+    bytes.push(b'\n');
+    let unknown = || {
+        ReadError::new(
+            "config_unknown",
+            "配置操作结果尚未确认，请重新预览后检查，勿重复提交。",
+        )
+    };
+    let output = run(
+        core,
+        Path::new(""),
+        processes,
+        Duration::from_secs(10),
+        MAX_REPORT,
+        CoreOperation::Client(bytes),
+    )
+    .map_err(|_| unknown())?;
+    let response: Value = serde_json::from_slice(&output).map_err(|_| unknown())?;
+    if response["version"] != 1 {
+        return Err(unknown());
+    }
+    if response["ok"] == true && response["result"].is_object() {
+        return Ok(response["result"].clone());
+    }
+    Err(match response["error"].as_str() {
+        Some("configuration changed; preview again") => ReadError::new(
+            "config_conflict",
+            "配置已被其它操作改动。请重新预览；不会覆盖这些改动。",
+        ),
+        Some("existing integration must be restored before changing it") => ReadError::new(
+            "config_managed",
+            "已有本机接入记录。请先撤销原接入，再更换配置。",
+        ),
+        Some("unsupported or invalid configuration") => ReadError::new(
+            "config_invalid",
+            "无法安全处理此配置。请检查 JSON 格式、链接文件和所选路径。",
+        ),
+        _ => unknown(),
+    })
+}
+
+#[cfg(test)]
+mod client_tests {
+    use super::*;
+    #[test]
+    #[cfg(unix)]
+    fn client_runner_uses_fixed_command_and_requires_versioned_result() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let core = dir.path().join("lc");
+        for (reply, code) in [
+            (
+                r#"{"version":1,"ok":true,"result":{"state":"installed"}}"#,
+                "ok",
+            ),
+            (
+                r#"{"version":1,"ok":false,"error":"configuration changed; preview again"}"#,
+                "config_conflict",
+            ),
+            (r#"{"ok":true,"result":{}}"#, "config_unknown"),
+        ] {
+            std::fs::write(&core,format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$0.args\"\ncat > \"$0.input\"\nprintf '%s' '{reply}'\n")).unwrap();
+            std::fs::set_permissions(&core, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let slot = ProcessSlot::default();
+            let request = serde_json::json!({"version":1,"op":"preview","host":"codex","project":"/tmp/quoted ' project"});
+            let result = client_operation(&core, &slot, &request);
+            if code == "ok" {
+                assert!(result.is_ok());
+            } else {
+                assert_eq!(result.unwrap_err().code, code);
+            }
+            assert_eq!(
+                std::fs::read_to_string(core.with_extension("args")).unwrap(),
+                "client-config\n"
+            );
+            let sent: Value =
+                serde_json::from_slice(&std::fs::read(core.with_extension("input")).unwrap())
+                    .unwrap();
+            assert_eq!(sent, request);
+            assert!(slot.0.lock().unwrap().child.is_none());
         }
     }
 }
