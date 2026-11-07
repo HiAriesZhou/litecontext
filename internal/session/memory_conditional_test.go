@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -85,5 +86,45 @@ func TestConditionalMemorySerializesCompetingWriters(t *testing.T) {
 	}
 	if ok != 1 || conflicts != 1 {
 		t.Fatalf("success=%d conflict=%d", ok, conflicts)
+	}
+}
+
+func TestConditionalSupersessionPreservesOldMemoryAtReadLimit(t *testing.T) {
+	for _, count := range []int{49, 50} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			dir := fixtureBundle(t)
+			ctx := context.Background()
+			var first MemoryRecord
+			for i := 0; i < count; i++ {
+				record, err := ApplyMemory(ctx, dir, MemoryChange{Action: "propose", ID: fmt.Sprintf("a%02d", i), Text: "Rule", Scope: "project", Evidence: []Ref{{SourceID: "src_test", ItemID: "itm_test"}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if i == 0 {
+					first = record
+				}
+			}
+			first, err := ApplyMemory(ctx, dir, MemoryChange{Action: "confirm", ID: first.ID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			replacement, err := ApplyMemory(ctx, dir, MemoryChange{Action: "supersede", ID: "mem-replacement", Supersedes: first.ID, Text: "New rule", Scope: first.Scope, Evidence: first.Evidence, Expected: &first})
+			records, invalid, capped, readErr := listMemories(dir)
+			if readErr != nil || invalid || capped {
+				t.Fatalf("unmanageable list: invalid=%v capped=%v error=%v", invalid, capped, readErr)
+			}
+			if count == 50 {
+				if err == nil || records[0].Status != "active" || len(records) != 50 {
+					t.Fatalf("retired old memory at capacity: %v %+v", err, records[0])
+				}
+			} else {
+				if err != nil || len(records) != 50 {
+					t.Fatalf("49→50 failed: %v", err)
+				}
+				if _, err = ApplyMemory(ctx, dir, MemoryChange{Action: "confirm", ID: replacement.ID, Expected: &replacement}); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
 	}
 }

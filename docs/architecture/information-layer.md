@@ -93,3 +93,5 @@ The prototype is accepted only when the record matches what the host received, r
 The stdio contract, deterministic assembly, task checkpoints, the one-shot hook adapter, and the prototype sample are in place. Windows CI runs the suite. A Windows agent hook has not been observed. Model extraction and an extra index come after search itself misses the hook deadline.
 
 Memory mutations may include `expected`, the complete previously read memory record. The core compares it under the memory write lock before correcting, confirming, revoking or superseding. A mismatch returns `memory changed; refresh before retrying` without changing either record. The desktop requires this precondition; existing explicit CLI calls may omit it. This compares current content, not a monotonic revision or an audit history.
+
+Conditional supersession checks the 50-record inspection limit under the memory write lock before retiring the old record. At capacity it returns `memory capacity reached` and leaves the old memory unchanged. Explicit CLI operations without `expected` retain their existing behavior.

@@ -528,6 +528,9 @@ func validID(id string) bool {
 }
 
 func publicError(err error) string {
+	if errors.Is(err, ErrMemoryCapacity) {
+		return ErrMemoryCapacity.Error()
+	}
 	if errors.Is(err, ErrMemoryChanged) {
 		return ErrMemoryChanged.Error()
 	}
