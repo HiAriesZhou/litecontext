@@ -18,6 +18,8 @@ import (
 const maxMemoryFiles = 50
 
 // MemoryChange is one explicit change to a memory. Nothing here activates a memory by itself.
+var ErrMemoryCapacity = errors.New("memory capacity reached")
+
 var ErrMemoryChanged = errors.New("memory changed; refresh before retrying")
 
 type MemoryChange struct {
@@ -170,6 +172,26 @@ func supersedeMemory(ctx context.Context, bundleDir string, change MemoryChange)
 		}
 		if previous.Status != "candidate" && previous.Status != "active" {
 			return fmt.Errorf("invalid memory")
+		}
+		if change.Expected != nil {
+			listing, err := dir.Open(".")
+			if err != nil {
+				return err
+			}
+			names, err := listing.Readdirnames(-1)
+			listing.Close()
+			if err != nil {
+				return err
+			}
+			count := 0
+			for _, name := range names {
+				if !strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".json") {
+					count++
+				}
+			}
+			if count >= maxMemoryFiles {
+				return ErrMemoryCapacity
+			}
 		}
 		restored := previous
 		previous.Status = "superseded"
@@ -360,7 +382,7 @@ func withMemory(ctx context.Context, bundleDir string, fn func(*os.Root) error) 
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("invalid memory")
 		}
-		if errors.Is(err, ErrMemoryChanged) || strings.Contains(err.Error(), "invalid memory") {
+		if errors.Is(err, ErrMemoryCapacity) || errors.Is(err, ErrMemoryChanged) || strings.Contains(err.Error(), "invalid memory") {
 			return err
 		}
 		return fmt.Errorf("memory storage failed")
