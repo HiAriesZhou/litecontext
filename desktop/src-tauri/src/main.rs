@@ -29,7 +29,7 @@ impl Workspace {
     fn enter(&self) -> Result<Busy<'_>, reader::ReadError> {
         self.busy
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| reader::ReadError::new("busy", "正在读取，请稍候。"))?;
+            .map_err(|_| reader::ReadError::new("busy", "正在处理，请稍候。"))?;
         Ok(Busy(&self.busy))
     }
 }
@@ -47,12 +47,7 @@ async fn inspect(
     processes: Arc<reader::ProcessSlot>,
 ) -> Result<Snapshot, reader::ReadError> {
     let start = std::time::Instant::now();
-    let executable = std::env::current_exe()
-        .map_err(|_| reader::ReadError::new("core_unavailable", "无法找到应用内的读取程序。"))?;
-    let core = executable
-        .parent()
-        .ok_or_else(|| reader::ReadError::new("core_unavailable", "无法找到应用内的读取程序。"))?
-        .join(if cfg!(windows) { "lc.exe" } else { "lc" });
+    let core = core_path()?;
     let read_path = path.clone();
     let report =
         tauri::async_runtime::spawn_blocking(move || reader::read(&core, &read_path, &processes))
@@ -67,6 +62,16 @@ async fn inspect(
         report,
         elapsed_ms: start.elapsed().as_millis(),
     })
+}
+
+fn core_path() -> Result<PathBuf, reader::ReadError> {
+    let executable = std::env::current_exe()
+        .map_err(|_| reader::ReadError::new("core_unavailable", "无法找到应用内的读取程序。"))?;
+    let core = executable
+        .parent()
+        .ok_or_else(|| reader::ReadError::new("core_unavailable", "无法找到应用内的读取程序。"))?
+        .join(if cfg!(windows) { "lc.exe" } else { "lc" });
+    Ok(core)
 }
 
 #[tauri::command]
@@ -101,10 +106,46 @@ async fn refresh_bundle(state: tauri::State<'_, Workspace>) -> Result<Snapshot, 
     inspect(path, state.processes.clone()).await
 }
 
+#[tauri::command]
+async fn change_memory(
+    state: tauri::State<'_, Workspace>,
+    bundle_path: String,
+    edit: reader::MemoryEdit,
+) -> Result<serde_json::Value, reader::ReadError> {
+    let _busy = state.enter()?;
+    let path = state
+        .selected
+        .lock()
+        .map_err(|_| reader::ReadError::new("state", "请重新打开应用。"))?
+        .clone()
+        .ok_or_else(|| reader::ReadError::new("no_bundle", "请先选择一个 bundle。"))?;
+    // The caller identifies the report it saw, never chooses the write destination.
+    if path.to_string_lossy() != bundle_path {
+        return Err(reader::ReadError::new(
+            "conflict",
+            "当前 bundle 已变化，请刷新。",
+        ));
+    }
+    let core = core_path()?;
+    let processes = state.processes.clone();
+    tauri::async_runtime::spawn_blocking(move || reader::mutate(&core, &path, &processes, edit))
+        .await
+        .map_err(|_| {
+            reader::ReadError::new(
+                "write_unknown",
+                "操作结果尚未确认，请刷新后检查，勿重复提交。",
+            )
+        })?
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(Workspace::default())
-        .invoke_handler(tauri::generate_handler![choose_bundle, refresh_bundle])
+        .invoke_handler(tauri::generate_handler![
+            choose_bundle,
+            refresh_bundle,
+            change_memory
+        ])
         .build(tauri::generate_context!())
         .expect("could not start LiteContext")
         .run(|app, event| {

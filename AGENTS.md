@@ -2,7 +2,7 @@
 
 LiteContext is a local-first information layer for Agent Context, Memory and Knowledge. This repository owns the shared core, CLI and portable contracts.
 
-`desktop/` contains the foreground read-only macOS workbench; read its nested agent guide for desktop changes. Its native bridge invokes the packaged Go inspection command and owns no domain rules. See `docs/architecture/desktop-workbench.md`.
+`desktop/` contains the foreground macOS workbench; read its nested agent guide for desktop changes. Its native bridge invokes the packaged Go inspection command and owns no domain rules. See `docs/architecture/desktop-workbench.md`.
 
 ## Boundaries
 
