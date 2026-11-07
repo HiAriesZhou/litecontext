@@ -44,6 +44,14 @@ Expand a memory to inspect its evidence before acting. Candidates can be correct
 
 Each write goes through the Go session contract with the entire previously read record as a precondition. A conflicting edit requires refresh. Stale or partial memory reports disable changes. A confirmed write and its subsequent refresh have separate outcomes; if the process response is lost, refresh and inspect the records before trying again. There is no automatic retry. Refresh replaces the current editor with fresh records; cancel editing before changing bundles. Text is limited to 2000 UTF-8 bytes.
 
-This stage does not create uncited memories, edit source files or install client configuration.
+Memory management does not create uncited memories or edit source files.
 
 At the current 50-record inspection limit, creating a replacement is disabled. The core also enforces this limit for conditional replacements under its write lock. Existing readable records can still be revoked or confirmed; revoked records continue to count toward the inspection limit.
+
+## Client configuration
+
+Select a bundle, open **客户端**, choose Codex, Claude Code or Gemini CLI, then **选择项目并预览**. The preview shows the exact project file and generated Hook fragment. **应用此配置** and its confirmation preserve existing settings and create a private local undo receipt. **撤销此接入** restores the previous file only if it has not been externally changed. **重新预览** or Command-R checks the current configuration again. Canceling the picker keeps the previous preview.
+
+The application does not launch a client, change global settings, enable trusted execution or verify subscriptions. Check the client's own Hook/trust interface after applying. `实际加载` remains unverified. GUI PATH detection can miss installed command-line clients. The app and bundle must stay at their configured locations; undo and reapply after moving either.
+
+Receipts may contain private settings. They stay in the machine's user configuration directory, outside the project and bundle. Only use synthetic projects during development. See [Client configuration architecture](../docs/architecture/client-configuration.md) for limits, interrupted writes and external-change handling.

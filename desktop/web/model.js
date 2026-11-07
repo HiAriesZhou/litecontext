@@ -1,4 +1,5 @@
 export const sections = {
+  clients: { title: "客户端", description: "为所选项目配置上下文接入。预览后应用，保留其它设置；实际加载由客户端决定。" },
   sources: { title: "来源", description: "已采集的资料及其当前状态。原始文件仍保留在原处。" },
   memories: { title: "记忆", description: "持久结论及其证据。候选记忆只有确认后才参与上下文准备。" },
   task: { title: "任务", description: "当前目标、进度与下一步，独立于长期记忆。" },

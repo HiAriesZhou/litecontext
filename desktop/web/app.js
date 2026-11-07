@@ -1,3 +1,4 @@
+import { clientLabels, configStates, canApply, canRestore } from "./clients.js";
 import { memoryActions, actionLabels, actionHelp, memoryEdit } from "./memory.js";
 import { sections, states, failureLabels, text, count, incomplete, describeError, basename, evidence } from "./model.js";
 
@@ -12,6 +13,11 @@ let notice = "";
 let draft = null;
 let openMemory = "";
 let writeBlocked = false;
+let clientHost = "codex";
+let clientPlan = null;
+let clientError = "";
+let clientNotice = "";
+let clientAction = "";
 
 function element(tag, content, className) {
   const node = document.createElement(tag);
@@ -168,7 +174,7 @@ function render() {
   $("content").setAttribute("aria-busy", String(busy));
   $("error").hidden = !lastError;
   $("error").textContent = lastError;
-  for (const key of Object.keys(sections)) $(`count-${key}`).textContent = count(report, key);
+  for (const key of Object.keys(sections)) $(`count-${key}`).textContent = key === "clients" ? "" : count(report, key);
   for (const button of document.querySelectorAll("[data-section]")) {
     if (button.dataset.section === section) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
@@ -183,6 +189,7 @@ function render() {
       selectedPath ? "修复文件或访问问题后，点击刷新重试。也可以选择另一个 bundle。" : "选择已有的 LiteContext bundle 文件夹，查看来源、记忆、任务和交付记录。"));
     return;
   }
+  if (section === "clients") { renderClients(content); return; }
   const hasRecords = section === "task" ? Boolean(report.task) : report[section].length > 0;
   if (!hasRecords && incomplete(report, section)) {
     content.append(empty(`无法读取${sections[section].title}`, "当前无法确认是否存在记录。请检查读取提示，修复后刷新重试。"));
@@ -200,6 +207,7 @@ async function load(choose) {
     const result = await window.__TAURI__.core.invoke(choose ? "choose_bundle" : "refresh_bundle");
     if (result !== null) {
       snapshot = result;
+      if (choose) { clientPlan = null; clientError = ""; clientNotice = ""; clientAction = ""; }
       selectedPath = result.bundlePath;
       loadedAt = new Date();
       draft = null; writeBlocked = false; notice = "";
@@ -208,6 +216,7 @@ async function load(choose) {
     }
   } catch (error) {
     if (choose) {
+      clientPlan = null; clientAction = ""; clientError = ""; clientNotice = "";
       snapshot = null;
       loadedAt = null;
       selectedPath = error?.bundlePath || "";
@@ -219,14 +228,63 @@ async function load(choose) {
     render();
   }
 }
+function renderClients(container) {
+  const label = element("label", "客户端", "client-label"); label.htmlFor = "client-host";
+  const select = element("select"); select.id = "client-host"; select.disabled = busy || Boolean(draft);
+  for (const [value, title] of Object.entries(clientLabels)) { const option = element("option", title); option.value = value; select.append(option); }
+  select.value = clientHost;
+  select.addEventListener("change", () => { clientHost = select.value; clientPlan = null; clientError = ""; clientNotice = ""; clientAction = ""; render(); });
+  container.append(label, select,
+    append(element("div", undefined, "actions"), actionButton("选择项目并预览", () => previewClient(true), busy || Boolean(draft)),
+      actionButton("重新预览", () => previewClient(false), busy || Boolean(draft))));
+  if (clientNotice) { const status = element("p", clientNotice, "notice"); status.setAttribute("role","status"); container.append(status); }
+  if (clientError) { const error = element("p", clientError, "form-error"); error.setAttribute("role","alert"); container.append(error); }
+  if (!clientPlan) { container.append(element("p", "选择项目目录后，将预览该项目的配置。不会修改全局设置或自动接受客户端的信任提示。", "muted")); return; }
+  container.append(append(element("dl",undefined,"client-fields"), field("项目",clientPlan.project,true),field("配置文件",clientPlan.destination,true),
+    field("配置状态",configStates[clientPlan.state] || "未知"),field("客户端程序",clientPlan.state === "restored" ? "未检查，请重新预览" : clientPlan.executableFound ? "已在应用环境路径中发现" : "未在应用环境路径中发现；不代表未安装"),field("实际加载","未验证")));
+  if (clientPlan.state !== "restored") container.append(element("h3","将使用的 Hook 配置","detail-heading"),element("pre",JSON.stringify(clientPlan.fragment,null,2),"citation config-preview"));
+  container.append(element("p","现有其它设置将保留。撤销凭据只保存在本机应用配置目录，不进入 bundle。应用或 bundle 移动后需要重新配置。", "muted"));
+  container.append(element("p", clientHost === "codex" ? "Codex 仍需启用并信任项目 Hook；文件存在不代表已加载。" : "请在客户端中检查项目设置与 Hook 信任提示，再开启会话验证。", "muted"));
+  if (clientPlan.state === "modified") container.append(element("p","检测到外部修改，自动撤销已停用，避免覆盖其它配置。请保留本机撤销凭据，人工核对文件。", "notice"));
+  const actions = element("div",undefined,"actions");
+  if (clientAction) {
+    container.append(element("p",clientAction === "apply" ? "应用上面的配置到所列文件；已有设置会保留。" : "将还原本机保存的原始配置。若期间发生其它修改，操作将停止。", "muted"));
+    actions.append(actionButton("取消",()=>{clientAction="";render();$("content").focus?.();},busy),actionButton(clientAction === "apply" ? "确认应用" : "确认撤销",changeClient,busy));
+  } else {
+    actions.append(actionButton("应用此配置",()=>{clientAction="apply";render();$("content").focus?.();},busy||!canApply(clientPlan)),
+      actionButton("撤销此接入",()=>{clientAction="restore";render();$("content").focus?.();},busy||!canRestore(clientPlan)));
+    if (!clientPlan.managed && !clientPlan.changed && clientPlan.state !== "restored") container.append(element("p","相同配置已存在，无需重复添加；没有本机撤销凭据。", "muted"));
+  }
+  container.append(actions);
+}
+async function previewClient(choose) {
+  if (busy || draft || !snapshot) return;
+  busy = true; clientError = ""; clientAction = ""; render();
+  try {
+    const result = await window.__TAURI__.core.invoke("preview_client",{host:clientHost,choose});
+    if (result !== null) {clientPlan=result;clientNotice="";}
+  } catch(error) {clientPlan=null;clientError=text(error?.message,"无法预览，请重试。");}
+  finally {busy=false;render();$("content").focus?.();}
+}
+async function changeClient() {
+  if(busy||!clientAction||!clientPlan)return;
+  const action=clientAction;
+  if(action === "apply" ? !canApply(clientPlan) : !canRestore(clientPlan))return;
+  busy=true;clientError="";clientNotice="";render();
+  try {
+    clientPlan=await window.__TAURI__.core.invoke("change_client",{action});
+    clientNotice=action === "apply" ? "配置已写入，请在客户端验证加载。" : "已还原原始配置。";
+  } catch(error) {clientPlan=null;clientError=text(error?.message,"操作结果尚未确认，请重新预览。");}
+  finally {clientAction="";busy=false;render();$("content").focus?.();}
+}
 $("choose").addEventListener("click", () => load(true));
-$("refresh").addEventListener("click", () => load(false));
+$("refresh").addEventListener("click", () => section === "clients" ? previewClient(false) : load(false));
 for (const button of document.querySelectorAll("[data-section]")) {
   button.addEventListener("click", () => { section = button.dataset.section; render(); });
 }
 document.addEventListener("keydown", (event) => {
   if (!event.metaKey || event.altKey || event.shiftKey) return;
   if (event.key.toLowerCase() === "o") { event.preventDefault(); load(true); }
-  if (event.key.toLowerCase() === "r") { event.preventDefault(); if (selectedPath) load(false); }
+  if (event.key.toLowerCase() === "r") { event.preventDefault(); if (selectedPath) { if (section === "clients") previewClient(false); else load(false); } }
 });
 render();

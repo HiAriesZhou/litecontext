@@ -10,7 +10,7 @@ Early development. The current CLI initializes and validates a version 1 context
 
 ## Quick start
 
-For the macOS desktop workbench, see [Desktop build and usage](desktop/README.md). It reads the same bundles and provides source, memory, task and delivery views plus explicit memory management without a background service.
+For the macOS desktop workbench, see [Desktop build and usage](desktop/README.md). It reads the same bundles and provides source, memory, task and delivery views plus explicit memory management and project client configuration without a background service.
 
 Requires Go 1.26 or later on macOS, Linux, or Windows.
 
@@ -53,6 +53,7 @@ The bundle destination must be absent or empty. Reuse the same source name to re
 - `internal/ingest/` — read-only Markdown scanning.
 - `internal/session/` — session contract, task checkpoints, memory, and inspect.
 - `internal/view/` — read-only HTML report.
+- `internal/clientconfig/` — project Hook preview, merge, conflict checks and machine-local undo.
 - `internal/host/` — one-shot hook profiles for Codex, Claude Code, and Gemini CLI `BeforeAgent`, plus printed Codex, Claude, and Gemini hook fragments.
 - `desktop/` — native workbench with memory management, embedded frontend and Go-core bridge.
 - `contracts/context-model/v1/` — portable record schemas.

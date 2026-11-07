@@ -4,6 +4,8 @@ fn main() {
             "choose_bundle",
             "refresh_bundle",
             "change_memory",
+            "preview_client",
+            "change_client",
         ]),
     ))
     .expect("could not generate desktop permissions");

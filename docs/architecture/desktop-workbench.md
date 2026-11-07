@@ -1,6 +1,6 @@
 # Desktop workbench
 
-The desktop workbench is a foreground client of the existing Go core. One Tauri window embeds static HTML, CSS and JavaScript. It offers sources, memory, task state and context-delivery views. It does not introduce a service, a network listener or host configuration installation.
+The desktop workbench is a foreground client of the existing Go core. One Tauri window embeds static HTML, CSS and JavaScript. It offers sources, memory, task state and context-delivery views. It does not introduce a service, a network listener or global host configuration changes.
 
 ```text
 Native folder picker → in-memory selected path
@@ -12,7 +12,7 @@ Static webview → bounded native commands → packaged lc inspect / serve --onc
 
 ## Boundary and process ownership
 
-The local `main` window is granted `choose_bundle`, `refresh_bundle` and `change_memory`. Read commands accept no path or command from JavaScript. The memory command compares the caller’s displayed bundle path with the native selection; it cannot select a write destination. The native folder picker selects the bundle; the selection is held in memory and disappears on exit.
+The local `main` window is granted `choose_bundle`, `refresh_bundle`, `change_memory`, `preview_client` and `change_client`. Read commands accept no path or command from JavaScript. The memory command compares the caller’s displayed bundle path with the native selection; it cannot select a write destination. The native folder picker selects the bundle; the selection is held in memory and disappears on exit.
 
 Each operation starts the `lc` executable packaged beside the workbench executable with a fixed argument array. It runs off the UI thread, with no shell. Reads use closed stdin; memory writes use a bounded JSON request with `lc serve --once`. The same core performs validation, scope enforcement, citation handling and inspection as the CLI. The frontend never reads or modifies bundle files. Existing core maintenance, such as obsolete snapshot cleanup, remains the core's responsibility.
 
@@ -49,3 +49,7 @@ macOS is the current desktop verification target. Windows desktop packaging and 
 The bridge accepts four explicit actions: candidate correction, confirmation, revocation and supersession. Domain validation and locking remain in Go. Supersession inherits the displayed record’s scope, visibility and citations; Go checks that complete record under the write lock before changing it. The source snapshot generation is not used as a memory revision. No client-side file writes or second authority are introduced.
 
 The UI stages edits inline before submission. Stale or incomplete memory views disable actions. Success is reported before refreshing; a refresh failure does not reclassify a committed write as failed. Process timeout, termination or an unrecognizable response is reported as an unknown write outcome, with refresh required and no automatic retry. Replacement follows the existing core semantics: old memory exits context immediately, replacement remains a candidate until confirmed. The existing two-record supersession uses best-effort rollback on write failure; it is not a crash-atomic transaction. Refresh is required after interrupted writes.
+
+## Client configuration
+
+The client panel uses a separate native project picker and the shared Go [project configuration service](client-configuration.md). Preview/apply/undo use the same bounded process owner as bundle operations, with fixed `lc client-config` arguments and JSON stdin. The webview holds no config file contents beyond the generated fragment and cannot select a write destination. The native process keeps the selected project, client and latest precondition in memory; selecting a different bundle invalidates them.
