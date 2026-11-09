@@ -4,6 +4,8 @@ LiteContext is one local product and one repository. Knowledge, Memory, and Cont
 
 ## Capabilities
 
+The [product architecture diagrams](product-map.md) show the current entry points, capability relationships and separate information/configuration stores.
+
 | Domain | Records | Update rule |
 | --- | --- | --- |
 | Knowledge | Source material and summaries derived from an exact source version | Refresh when the source version changes |
@@ -13,7 +15,7 @@ LiteContext is one local product and one repository. Knowledge, Memory, and Cont
 
 Knowledge and Memory both supply Context. A changed document updates Knowledge. It does not overwrite a project decision. Context may select the new document, the current decision, and the task state together.
 
-The [desktop workbench](desktop-workbench.md) is a foreground client of this core. It selects a bundle through the native picker, invokes the packaged inspection command, and submits explicit conditional memory changes; it does not add a daemon, network listener or second store.
+The [desktop workbench](desktop-workbench.md) is a foreground client of this core. It selects a bundle through the native picker, invokes the packaged inspection command, and submits explicit conditional memory changes. Its [client configuration](client-configuration.md) panel previews, applies and restores selected project Hook files through Go, with private device-local undo receipts outside the bundle. It does not add a daemon, network listener or second information store.
 
 The default delivery is small: current constraints, task progress, and an index of what can be retrieved. The agent retrieves more when the task needs it. Source text and earlier model output are data. They do not grant permission to change host instructions.
 
@@ -33,6 +35,8 @@ A new agent client adapts the host. It does not receive a copy of retrieval, mem
 | Memory | Proposals, correction, supersession, and activation | Evidence core |
 | Session runtime | Serves the contract over stdio and owns no host rules | The modules above |
 | Host adapter | Maps one client's events and injects the returned pack | Session runtime |
+| Client configuration | Previews, merges and restores project Hook files | Host profiles, bundle validation, device-local receipts |
+| Desktop workbench | Displays core reports and requests explicit memory/configuration changes | Packaged Go commands through a bounded native bridge |
 
 Knowledge remains the evidence core's retrieval view. The viewer and CLI call the same runtime. Neither keeps a second copy of the records.
 
