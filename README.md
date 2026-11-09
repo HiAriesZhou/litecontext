@@ -65,7 +65,7 @@ For batch import, first allocate a source with `lc source add NAME --bundle DIR 
 
 For an exact result, use `lc item show ITEM_ID --source SOURCE_ID --record-hash HASH --bundle DIR --json`. Use `lc visibility set ITEM_ID --source SOURCE_ID --visibility private|team|public|inherit --bundle DIR` to manage overrides. `lc source disconnect SOURCE_ID --bundle DIR` stops reads; `lc source purge SOURCE_ID --bundle DIR` deletes all collected versions for that source. Purge leaves the original files in place.
 
-See [Architecture](docs/architecture/overview.md), [Information layer](docs/architecture/information-layer.md), and [Contributing](CONTRIBUTING.md).
+See [Product architecture diagrams](docs/architecture/product-map.md), [Evidence architecture](docs/architecture/overview.md), [Information layer](docs/architecture/information-layer.md), and [Contributing](CONTRIBUTING.md).
 
 ## Development
 

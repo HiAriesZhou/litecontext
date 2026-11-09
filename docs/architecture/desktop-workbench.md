@@ -5,10 +5,13 @@ The desktop workbench is a foreground client of the existing Go core. One Tauri 
 ```text
 Native folder picker → in-memory selected path
                               ↓
-Static webview → bounded native commands → packaged lc inspect / serve --once
-                              ↓                       ↓
-                      typed error/result       existing bundle + session reads
+Static webview → bounded native commands → packaged Go core
+                              ↑                ├─ inspect → bundle reports
+                      typed error/result       ├─ serve --once → conditional memory writes
+                                               └─ client-config → project Hooks + local undo receipts
 ```
+
+See the [product architecture diagrams](product-map.md) for capability relationships and storage ownership.
 
 ## Boundary and process ownership
 
