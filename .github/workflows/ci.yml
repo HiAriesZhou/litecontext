@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# PR updates supersede older checks; each main push has its own group, including
+# pending runs (cancel-in-progress: false alone would still replace pending runs).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   secret-history:
     name: Secret history
@@ -57,6 +63,10 @@ jobs:
   desktop-verify:
     name: macOS desktop build
     runs-on: macos-15
+    env:
+      # tauri build exports bundle.macOS.minimumSystemVersion; without the same
+      # value the Rust tests compile the native dependencies a second time.
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
     defaults:
       run:
         working-directory: desktop
@@ -70,11 +80,21 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: desktop/package-lock.json
+      - name: Select Rust toolchain
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt
+          rustup default 1.99.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          cache-bin: false
+      # npm installs the locked, precompiled Tauri CLI; do not cargo-install it.
       - run: npm ci
       - run: npm test
       - run: npm run core
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
-      - run: cargo test --release --locked --manifest-path src-tauri/Cargo.toml
+      # Match the app build's feature graph so dependencies need compiling once.
+      - run: cargo test --release --locked --features custom-protocol --manifest-path src-tauri/Cargo.toml
       - run: npm run build
       - name: Packaged core smoke
         run: ./src-tauri/target/release/bundle/macos/LiteContext.app/Contents/MacOS/lc version --json
